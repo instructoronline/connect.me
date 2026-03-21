@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Connect Me",
+  "version": "1.0.0",
+  "description": "A plain-text Chrome extension scaffold that can be loaded locally without binary assets.",
+  "action": {
+    "default_title": "Connect Me",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
