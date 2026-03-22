@@ -1,6 +1,7 @@
 import {
   deleteAccountData,
   deleteHistory,
+  ensureBuiltInConfig,
   extractTabInfo,
   fetchActiveUsersForDomain,
   fetchTopSites,
@@ -15,7 +16,6 @@ import {
   normalizeRetentionSelection,
   parseRetentionSelection,
   readConfig,
-  saveConfig,
   saveUserMetadataProfileSnapshot,
   signIn,
   signOut,
@@ -212,21 +212,6 @@ function populateSelect(select, options, selectedValue) {
 async function getCurrentTabInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return extractTabInfo(tab?.url);
-}
-
-async function maybeRequestSupabasePermission(url) {
-  if (!url) {
-    return;
-  }
-  const origin = new URL(url).origin;
-  const pattern = `${origin}/*`;
-  const alreadyGranted = await chrome.permissions.contains({ origins: [pattern] });
-  if (!alreadyGranted) {
-    const granted = await chrome.permissions.request({ origins: [pattern] });
-    if (!granted) {
-      throw new Error('Connect.Me needs host permission for your Supabase URL to save and load data.');
-    }
-  }
 }
 
 function getInitials(profile) {
@@ -791,18 +776,10 @@ async function bindEvents() {
 
   els.configForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    setStatus('Saving Supabase settings…');
-    try {
-      await maybeRequestSupabasePermission(els.supabaseUrl.value.trim());
-      await saveConfig({
-        url: els.supabaseUrl.value.trim(),
-        anonKey: els.supabaseAnonKey.value.trim()
-      });
-      setStatus('Settings saved successfully', 'success');
-      await refreshState();
-    } catch (error) {
-      setStatus(error.message, 'error');
-    }
+    const config = await readConfig();
+    els.supabaseUrl.value = config.url || '';
+    els.supabaseAnonKey.value = config.anonKey || '';
+    setStatus('Built-in Supabase configuration loaded successfully.', 'success');
   });
 
   els.privacySettingsForm.addEventListener('submit', async (event) => {
@@ -884,15 +861,18 @@ async function bindEvents() {
 async function initialize() {
   bindElements();
   renderPrivacyTab();
-  const config = await readConfig();
+  const config = await ensureBuiltInConfig();
   els.supabaseUrl.value = config.url || '';
   els.supabaseAnonKey.value = config.anonKey || '';
+  els.supabaseUrl.readOnly = true;
+  els.supabaseAnonKey.readOnly = true;
   populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, 'domain');
   populateSelect(els.retentionSelect, getRetentionOptions(), '7|days');
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
   populateSelect(els.consentRetention, getRetentionOptions(), '7|days');
   await bindEvents();
   await refreshState();
+  setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
 
 initialize().catch((error) => {

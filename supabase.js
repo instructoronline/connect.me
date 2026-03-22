@@ -4,6 +4,11 @@ const STORAGE_KEYS = {
   cachedUser: 'connectme-cached-user'
 };
 
+export const BUILT_IN_SUPABASE_CONFIG = Object.freeze({
+  url: 'https://dhmtljnjygcqzjrhhscu.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRobXRsam5qeWdjcXpqcmhoc2N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMDEzNjksImV4cCI6MjA4OTc3NzM2OX0.U_FPABVKYafvdEC9ewRt2hbARKta-fjHvLfKhbvltas'
+});
+
 const DEFAULT_PRIVACY_SETTINGS = {
   consentGranted: false,
   trackingEnabled: false,
@@ -73,29 +78,41 @@ function normalizeSupabaseUrl(url) {
   return url.trim().replace(/\/+$/, '');
 }
 
-async function getConfig() {
-  const { [STORAGE_KEYS.config]: config } = await getLocalStore(STORAGE_KEYS.config);
-  if (!config?.url || !config?.anonKey) {
-    throw new Error('Supabase URL and anon key are required in Settings before continuing.');
-  }
+function getBuiltInConfig() {
   return {
-    url: normalizeSupabaseUrl(config.url),
-    anonKey: config.anonKey.trim()
+    url: normalizeSupabaseUrl(BUILT_IN_SUPABASE_CONFIG.url),
+    anonKey: BUILT_IN_SUPABASE_CONFIG.anonKey.trim()
   };
 }
 
-export async function saveConfig(config) {
-  await setLocalStore({
-    [STORAGE_KEYS.config]: {
-      url: normalizeSupabaseUrl(config.url),
-      anonKey: String(config.anonKey || '').trim()
-    }
-  });
+function isBuiltInConfig(config) {
+  const builtIn = getBuiltInConfig();
+  return config?.url === builtIn.url && config?.anonKey === builtIn.anonKey;
+}
+
+export async function ensureBuiltInConfig() {
+  const builtIn = getBuiltInConfig();
+  const { [STORAGE_KEYS.config]: storedConfig } = await getLocalStore(STORAGE_KEYS.config);
+
+  if (!isBuiltInConfig(storedConfig)) {
+    await setLocalStore({
+      [STORAGE_KEYS.config]: builtIn
+    });
+  }
+
+  return builtIn;
+}
+
+async function getConfig() {
+  return ensureBuiltInConfig();
+}
+
+export async function saveConfig(_config = BUILT_IN_SUPABASE_CONFIG) {
+  return ensureBuiltInConfig();
 }
 
 export async function readConfig() {
-  const { [STORAGE_KEYS.config]: config } = await getLocalStore(STORAGE_KEYS.config);
-  return config || { url: '', anonKey: '' };
+  return ensureBuiltInConfig();
 }
 
 export function getDefaultPrivacySettings() {
