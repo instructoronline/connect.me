@@ -6,24 +6,34 @@
     <title>Connect.Me</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body class="popup-body">
-    <main class="app-shell">
-      <header class="app-header">
+  <body class="popup-body light-theme">
+    <main class="app-shell popup-shell">
+      <header class="app-header card soft-card">
         <div>
-          <p class="eyebrow">Privacy-first site presence</p>
+          <p class="eyebrow">Professional presence, controlled by consent</p>
           <h1>Connect.Me</h1>
+          <p class="subtitle">A privacy-first academic and professional networking extension.</p>
         </div>
-        <button id="presenceQuickToggle" class="toggle-button" type="button">Presence OFF</button>
+        <div class="header-actions">
+          <label class="mini-toggle" for="presenceQuickToggle">
+            <span>Presence</span>
+            <input id="presenceQuickToggle" type="checkbox" />
+          </label>
+        </div>
       </header>
 
-      <section id="statusBanner" class="status-banner hidden"></section>
+      <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
 
-      <section id="authPanel" class="card">
-        <h2>Welcome</h2>
-        <p>Sign up or log in to enable privacy-controlled presence and optional history tracking.</p>
+      <section id="authPanel" class="card hidden">
+        <div class="section-heading">
+          <div>
+            <h2>Sign in to begin</h2>
+            <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
+          </div>
+        </div>
         <form id="authForm" class="stack-md">
           <label>
-            Email
+            Email address
             <input id="authEmail" type="email" autocomplete="username" required />
           </label>
           <label>
@@ -31,20 +41,22 @@
             <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
           </label>
           <div class="button-row">
-            <button id="loginButton" type="submit">Log In</button>
-            <button id="signupButton" type="button" class="secondary">Sign Up</button>
+            <button id="loginButton" type="submit">Log in</button>
+            <button id="signupButton" type="button" class="secondary">Sign up</button>
           </div>
         </form>
       </section>
 
       <section id="consentPanel" class="card hidden">
-        <h2>Before tracking starts</h2>
-        <p>
-          Connect.Me does not collect any browsing data until you explicitly grant consent. Choose your tracking scope and retention window below.
-        </p>
+        <div class="section-heading">
+          <div>
+            <h2>Consent required</h2>
+            <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
+          </div>
+        </div>
         <form id="consentForm" class="stack-md">
           <label>
-            What history should be stored?
+            History scope
             <select id="consentHistoryMode"></select>
           </label>
           <label>
@@ -56,30 +68,64 @@
             <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
             <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
           </div>
-          <button type="submit">I Consent</button>
+          <div class="callout info">
+            Your data will not be shared with any third parties. You can change or revoke these settings at any time.
+          </div>
+          <button type="submit">Save consent preferences</button>
         </form>
       </section>
 
       <section id="profilePanel" class="card hidden">
-        <div class="section-heading">
-          <h2>Your profile</h2>
-          <button id="logoutButton" type="button" class="secondary small">Log Out</button>
+        <div class="section-heading align-start">
+          <div>
+            <h2>Profile setup</h2>
+            <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
+          </div>
+          <button id="logoutButton" type="button" class="secondary small">Log out</button>
         </div>
-        <p>Create or update your visible profile. Your profile is only shown when presence sharing is enabled and Invisible Mode is off.</p>
-        <form id="profileForm" class="stack-md">
-          <label>
-            Display name
-            <input id="displayName" type="text" maxlength="80" required />
-          </label>
-          <label>
-            Headline
-            <input id="headline" type="text" maxlength="120" placeholder="Designer · Builder · Marketer" />
-          </label>
-          <label>
-            Bio
-            <textarea id="bio" rows="3" maxlength="280" placeholder="Tell people what you do."></textarea>
-          </label>
-          <button type="submit">Save Profile</button>
+
+        <form id="profileForm" class="stack-md" enctype="multipart/form-data">
+          <div class="profile-edit-layout">
+            <div class="avatar-column">
+              <div id="avatarPreview" class="avatar avatar-large">CM</div>
+              <label class="file-input-label">
+                Profile picture
+                <input id="profileImage" type="file" accept="image/*" />
+              </label>
+              <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
+            </div>
+            <div class="profile-fields stack-md">
+              <label>
+                First name
+                <input id="firstName" type="text" maxlength="50" required />
+              </label>
+              <label>
+                Last name
+                <input id="lastName" type="text" maxlength="50" required />
+              </label>
+              <label>
+                Place of work
+                <input id="placeOfWork" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Education
+                <input id="education" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Current location
+                <input id="currentLocation" type="text" maxlength="120" required />
+              </label>
+              <label>
+                Professional headline
+                <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
+              </label>
+              <label>
+                Short bio
+                <textarea id="bio" rows="3" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
+              </label>
+            </div>
+          </div>
+          <button type="submit">Save profile</button>
         </form>
       </section>
 
@@ -93,25 +139,32 @@
       <section id="currentSiteTab" class="tab-panel active">
         <article class="card stack-md">
           <div class="section-heading">
-            <h2>Current Site</h2>
-            <span id="currentDomainBadge" class="badge">Not on a web page</span>
-          </div>
-          <div id="currentSiteContent" class="stack-md">
             <div>
-              <h3>You</h3>
-              <div id="selfProfileSummary" class="empty-state">Log in to load your profile.</div>
+              <h2>Current Site</h2>
+              <p class="muted">See your current domain, your profile, and active members on the same site.</p>
             </div>
-            <div>
-              <div class="section-heading">
-                <h3>Active users here</h3>
-                <label class="switch-row">
-                  <span>Presence</span>
+            <span id="currentDomainBadge" class="badge">No website detected</span>
+          </div>
+
+          <div class="grid-two">
+            <section class="stack-sm">
+              <h3>Your profile</h3>
+              <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
+            </section>
+            <section class="stack-sm">
+              <div class="section-heading compact">
+                <div>
+                  <h3>Live presence</h3>
+                  <p class="muted small-text">Available only when presence sharing is on and Invisible Mode is off.</p>
+                </div>
+                <label class="mini-toggle" for="presenceSharingInline">
+                  <span>ON/OFF</span>
                   <input id="presenceSharingInline" type="checkbox" />
                 </label>
               </div>
-              <p class="muted">Only shown when presence sharing is enabled and Invisible Mode is off.</p>
+              <div id="presenceStateNote" class="callout subtle">Enable presence sharing to see active members on this site.</div>
               <div id="activeUsersList" class="list"></div>
-            </div>
+            </section>
           </div>
         </article>
       </section>
@@ -119,14 +172,20 @@
       <section id="topSitesTab" class="tab-panel">
         <article class="card stack-md">
           <div class="section-heading">
-            <h2>Top Sites</h2>
+            <div>
+              <h2>Top Sites</h2>
+              <p class="muted">Domains with the highest number of active Connect.Me users right now.</p>
+            </div>
             <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
           </div>
           <div id="topSitesList" class="list"></div>
         </article>
         <article id="topSiteDetailCard" class="card stack-md hidden">
           <div class="section-heading">
-            <h2 id="topSiteDetailHeading">Site detail</h2>
+            <div>
+              <h2 id="topSiteDetailHeading">Site detail</h2>
+              <p class="muted">Currently active users on the selected website.</p>
+            </div>
             <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
           </div>
           <div id="topSiteUsersList" class="list"></div>
@@ -135,27 +194,27 @@
 
       <section id="settingsTab" class="tab-panel">
         <article class="card stack-md">
-          <h2>Settings</h2>
+          <h2>Supabase connection</h2>
           <form id="configForm" class="stack-md">
             <label>
               Supabase URL
-              <input id="supabaseUrl" type="url" placeholder="https://project.supabase.co" />
+              <input id="supabaseUrl" type="url" placeholder="https://project-ref.supabase.co" />
             </label>
             <label>
               Supabase anon key
-              <textarea id="supabaseAnonKey" rows="3" placeholder="Paste your anon key"></textarea>
+              <textarea id="supabaseAnonKey" rows="4" placeholder="Paste your anon key"></textarea>
             </label>
-            <button type="submit">Save Supabase Settings</button>
+            <button type="submit">Save Supabase settings</button>
           </form>
         </article>
 
         <article class="card stack-md">
-          <h2>Privacy controls</h2>
+          <h2>Tracking and privacy controls</h2>
           <form id="privacySettingsForm" class="stack-md">
             <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
-            <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable history tracking</label>
+            <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
             <label>
-              Tracking scope
+              What history should be stored?
               <select id="historyMode"></select>
             </label>
             <label>
@@ -164,11 +223,13 @@
             </label>
             <label class="checkbox-row"><input id="presenceSharingEnabled" type="checkbox" /> Presence sharing ON/OFF</label>
             <label class="checkbox-row"><input id="invisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
-            <button type="submit">Save Privacy Settings</button>
+            <div id="privacyValidationMessage" class="callout subtle hidden"></div>
+            <button type="submit">Save privacy settings</button>
           </form>
+
           <div class="button-row">
-            <button id="deleteHistoryButton" type="button" class="danger">Delete Stored History</button>
-            <button id="deleteAccountButton" type="button" class="danger ghost">Delete Account Data</button>
+            <button id="deleteHistoryButton" type="button" class="danger">Delete stored history</button>
+            <button id="deleteAccountButton" type="button" class="danger ghost">Delete account data</button>
           </div>
         </article>
       </section>

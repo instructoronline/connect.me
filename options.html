@@ -6,27 +6,46 @@
     <title>Connect.Me Settings</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body class="page-body">
-    <main class="page-shell">
-      <header class="page-header">
-        <p class="eyebrow">Connect.Me</p>
-        <h1>Extension Settings</h1>
-        <p class="muted">Configure Supabase, review your privacy choices, and open the popup to test live presence behavior.</p>
+  <body class="page-body light-theme">
+    <main class="page-shell options-shell">
+      <header class="page-header card soft-card">
+        <div>
+          <p class="eyebrow">Connect.Me</p>
+          <h1>Extension settings overview</h1>
+          <p class="subtitle">Review your configuration, privacy controls, and policy details in a full-page layout.</p>
+        </div>
       </header>
-      <section class="card stack-md">
-        <h2>Open the popup for live site controls</h2>
-        <p>The popup is the primary UI for authentication, current-site presence, and Top Sites. These settings are mirrored here for convenience.</p>
-        <button id="openPrivacyPage" type="button">Open Privacy Policy</button>
+
+      <section id="optionsStatus" class="status-banner hidden"></section>
+
+      <section class="grid-two">
+        <article class="card stack-md">
+          <h2>Supabase configuration</h2>
+          <div id="configSummary" class="stack-sm"></div>
+        </article>
+
+        <article class="card stack-md">
+          <h2>Privacy summary</h2>
+          <div id="privacySummary" class="stack-sm"></div>
+        </article>
       </section>
-      <section class="card stack-md">
-        <h2>Configured Supabase project</h2>
-        <div id="optionsConfigSummary" class="empty-state">Not configured yet.</div>
-      </section>
-      <section class="card stack-md">
-        <h2>Current privacy snapshot</h2>
-        <div id="optionsPrivacySummary" class="empty-state">Log in through the popup to review your live privacy settings.</div>
+
+      <section class="grid-two">
+        <article class="card stack-md">
+          <h2>Profile readiness</h2>
+          <div id="profileSummary" class="stack-sm"></div>
+        </article>
+
+        <article class="card stack-md">
+          <h2>Helpful actions</h2>
+          <div class="button-column">
+            <button id="openPopupButton" type="button">Open extension popup</button>
+            <button id="openPrivacyButton" type="button" class="secondary">Open privacy policy page</button>
+          </div>
+        </article>
       </section>
     </main>
+
     <script type="module" src="options.js"></script>
   </body>
 </html>

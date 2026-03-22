@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Connect.Me",
-  "description": "Privacy-first site presence and optional browsing history tracking powered by Supabase.",
-  "version": "1.0.0",
+  "description": "Privacy-first site presence, consent-driven browsing controls, and professional networking powered by Supabase.",
+  "version": "1.1.0",
   "minimum_chrome_version": "114",
   "action": {
     "default_title": "Connect.Me",

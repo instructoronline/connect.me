@@ -11,26 +11,20 @@ import {
   getPrivacySettings,
   getProfile,
   getRetentionOptions,
+  hasCompleteProfile,
+  parseRetentionSelection,
   readConfig,
   saveConfig,
+  saveUserMetadataProfileSnapshot,
   signIn,
   signOut,
   signUp,
+  updatePresenceSharingPreference,
+  uploadProfileImage,
   upsertPrivacySettings,
   upsertProfile
 } from './supabase.js';
 import { privacyHtml } from './privacy.js';
-
-const state = {
-  user: null,
-  profile: null,
-  privacy: getDefaultPrivacySettings(),
-  tabInfo: null,
-  topSites: [],
-  topSiteDetailDomain: null
-};
-
-const els = {};
 
 const HISTORY_MODE_OPTIONS = [
   { value: 'none', label: 'Store no history' },
@@ -39,28 +33,62 @@ const HISTORY_MODE_OPTIONS = [
   { value: 'full_url', label: 'Full URL' }
 ];
 
+const state = {
+  user: null,
+  profile: null,
+  privacy: getDefaultPrivacySettings(),
+  tabInfo: null,
+  topSites: [],
+  detailDomain: null,
+  pendingAvatar: null
+};
+
+const els = {};
+
 function $(id) {
   return document.getElementById(id);
 }
 
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function setStatus(message, type = 'info') {
+  if (!message) {
+    els.statusBanner.textContent = '';
+    els.statusBanner.className = 'status-banner hidden';
+    return;
+  }
   els.statusBanner.textContent = message;
   els.statusBanner.className = `status-banner ${type}`;
-  if (!message) {
-    els.statusBanner.classList.add('hidden');
+}
+
+function setInlineValidation(message = '') {
+  els.privacyValidationMessage.textContent = message;
+  els.privacyValidationMessage.classList.toggle('hidden', !message);
+  if (message) {
+    els.privacyValidationMessage.classList.remove('subtle');
+    els.privacyValidationMessage.classList.add('error');
+  } else {
+    els.privacyValidationMessage.classList.add('subtle');
+    els.privacyValidationMessage.classList.remove('error');
   }
 }
 
 function populateSelect(select, options, selectedValue) {
   select.innerHTML = '';
   options.forEach((option) => {
-    const element = document.createElement('option');
-    element.value = option.value ?? `${option.unit}:${option.value}`;
-    element.textContent = option.label;
-    if ((option.value ?? `${option.unit}:${option.value}`) === selectedValue) {
-      element.selected = true;
-    }
-    select.appendChild(element);
+    const el = document.createElement('option');
+    const value = option.value ?? `${option.unit}:${option.value}`;
+    el.value = value;
+    el.textContent = option.label;
+    el.selected = value === selectedValue;
+    select.appendChild(el);
   });
 }
 
@@ -73,153 +101,242 @@ async function maybeRequestSupabasePermission(url) {
   if (!url) {
     return;
   }
-  const originPattern = `${new URL(url).origin}/*`;
-  const alreadyGranted = await chrome.permissions.contains({ origins: [originPattern] });
-  if (alreadyGranted) {
-    return;
-  }
-  const granted = await chrome.permissions.request({ origins: [originPattern] });
-  if (!granted) {
-    throw new Error('Supabase host permission is required to connect to your project.');
+  const origin = new URL(url).origin;
+  const pattern = `${origin}/*`;
+  const alreadyGranted = await chrome.permissions.contains({ origins: [pattern] });
+  if (!alreadyGranted) {
+    const granted = await chrome.permissions.request({ origins: [pattern] });
+    if (!granted) {
+      throw new Error('Connect.Me needs host permission for your Supabase URL to save and load data.');
+    }
   }
 }
 
+function getInitials(profile) {
+  const first = profile?.first_name?.[0] || 'C';
+  const last = profile?.last_name?.[0] || 'M';
+  return `${first}${last}`.toUpperCase();
+}
+
+function renderAvatar(profile, size = 'medium') {
+  if (profile?.avatar_url) {
+    return `<img class="avatar avatar-${size}" src="${escapeHtml(profile.avatar_url)}" alt="${escapeHtml(profile.first_name || 'User')} avatar" />`;
+  }
+  return `<div class="avatar avatar-${size}">${escapeHtml(getInitials(profile))}</div>`;
+}
+
+function renderProfilePrompt() {
+  if (!state.user) {
+    els.profilePrompt.textContent = 'Complete your full profile before using community presence features.';
+    return;
+  }
+  els.profilePrompt.textContent = hasCompleteProfile(state.profile)
+    ? 'Your profile is complete. You can update it any time.'
+    : 'Your profile is incomplete. Presence sharing stays disabled until all required profile fields are completed.';
+}
+
 function renderAuthState() {
-  els.authPanel.classList.toggle('hidden', !!state.user);
-  const profileReady = !!state.user;
-  els.profilePanel.classList.toggle('hidden', !profileReady);
-  const needsConsent = !!state.user && !state.privacy.consentGranted;
-  els.consentPanel.classList.toggle('hidden', !needsConsent);
+  const loggedIn = Boolean(state.user);
+  els.authPanel.classList.toggle('hidden', loggedIn);
+  els.profilePanel.classList.toggle('hidden', !loggedIn);
+  els.consentPanel.classList.toggle('hidden', !loggedIn || state.privacy.consentGranted);
+}
+
+function renderProfileForm() {
+  els.firstName.value = state.profile?.first_name || '';
+  els.lastName.value = state.profile?.last_name || '';
+  els.placeOfWork.value = state.profile?.place_of_work || '';
+  els.education.value = state.profile?.education || '';
+  els.currentLocation.value = state.profile?.current_location || '';
+  els.headline.value = state.profile?.headline || '';
+  els.bio.value = state.profile?.bio || '';
+  els.avatarPreview.innerHTML = renderAvatar(state.profile, 'large');
+  renderProfilePrompt();
 }
 
 function renderProfileSummary() {
   if (!state.user) {
-    els.selfProfileSummary.innerHTML = '<div class="empty-state">Log in to load your profile.</div>';
+    els.selfProfileSummary.innerHTML = '<div class="empty-state">Sign in to view your profile.</div>';
     return;
   }
   if (!state.profile) {
-    els.selfProfileSummary.innerHTML = '<div class="empty-state">Create your profile to appear to others.</div>';
+    els.selfProfileSummary.innerHTML = '<div class="empty-state">Create your profile to unlock presence and community features.</div>';
     return;
   }
+
+  const complete = hasCompleteProfile(state.profile);
   els.selfProfileSummary.innerHTML = `
-    <div class="user-card self">
-      <strong>${state.profile.display_name}</strong>
-      <span>${state.profile.headline || 'No headline yet'}</span>
-      <p>${state.profile.bio || 'No bio yet.'}</p>
+    <div class="user-card self-card">
+      <div class="user-row">
+        ${renderAvatar(state.profile, 'medium')}
+        <div>
+          <strong>${escapeHtml(state.profile.first_name)} ${escapeHtml(state.profile.last_name)}</strong>
+          <div class="muted">${escapeHtml(state.profile.headline || `${state.profile.place_of_work} · ${state.profile.education}`)}</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <span><strong>Work:</strong> ${escapeHtml(state.profile.place_of_work)}</span>
+        <span><strong>Education:</strong> ${escapeHtml(state.profile.education)}</span>
+        <span><strong>Location:</strong> ${escapeHtml(state.profile.current_location)}</span>
+      </div>
+      <p>${escapeHtml(state.profile.bio || 'No bio added yet.')}</p>
+      <span class="pill ${complete ? 'success' : 'warning'}">${complete ? 'Profile complete' : 'Profile incomplete'}</span>
     </div>
   `;
 }
 
 function renderDomainBadge() {
-  els.currentDomainBadge.textContent = state.tabInfo?.domain || 'Not on a supported page';
+  els.currentDomainBadge.textContent = state.tabInfo?.domain || 'No website detected';
 }
 
 function renderPresenceControls() {
-  const enabled = !!state.privacy.presenceSharingEnabled;
-  els.presenceQuickToggle.textContent = `Presence ${enabled ? 'ON' : 'OFF'}`;
-  els.presenceQuickToggle.classList.toggle('active', enabled);
-  els.presenceSharingInline.checked = enabled;
-  els.presenceSharingEnabled.checked = enabled;
-  els.invisibleModeEnabled.checked = !!state.privacy.invisibleModeEnabled;
+  const allowed = hasCompleteProfile(state.profile);
+  const presenceEnabled = Boolean(state.privacy.presenceSharingEnabled && allowed);
+
+  els.presenceQuickToggle.checked = presenceEnabled;
+  els.presenceSharingInline.checked = presenceEnabled;
+  els.presenceSharingEnabled.checked = presenceEnabled;
+  els.invisibleModeEnabled.checked = Boolean(state.privacy.invisibleModeEnabled);
+
+  els.presenceQuickToggle.disabled = !state.user || !state.privacy.consentGranted || !allowed;
+  els.presenceSharingInline.disabled = !state.user || !state.privacy.consentGranted || !allowed;
+
+  let note = 'Enable presence sharing to see active members on this site.';
+  if (!state.user) {
+    note = 'Log in to use live presence features.';
+  } else if (!state.privacy.consentGranted) {
+    note = 'Save consent settings before presence can begin.';
+  } else if (!allowed) {
+    note = 'Finish your full profile to enable presence sharing.';
+  } else if (state.privacy.invisibleModeEnabled) {
+    note = 'Invisible Mode is on. You can browse without appearing to other users.';
+  } else if (!state.privacy.presenceSharingEnabled) {
+    note = 'Presence sharing is currently off.';
+  } else {
+    note = 'Presence sharing is on. Only currently active users are shown.';
+  }
+  els.presenceStateNote.textContent = note;
 }
 
 function renderPrivacySettingsForm() {
-  els.trackingConsent.checked = !!state.privacy.consentGranted;
-  els.trackingEnabled.checked = !!state.privacy.trackingEnabled;
-  els.presenceSharingEnabled.checked = !!state.privacy.presenceSharingEnabled;
-  els.invisibleModeEnabled.checked = !!state.privacy.invisibleModeEnabled;
-  const retentionValue = `${state.privacy.retentionUnit}:${state.privacy.retentionValue}`;
+  els.trackingConsent.checked = Boolean(state.privacy.consentGranted);
+  els.trackingEnabled.checked = Boolean(state.privacy.trackingEnabled);
+  els.presenceSharingEnabled.checked = Boolean(state.privacy.presenceSharingEnabled && hasCompleteProfile(state.profile));
+  els.invisibleModeEnabled.checked = Boolean(state.privacy.invisibleModeEnabled);
   populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode);
-  populateSelect(els.retentionSelect, getRetentionOptions(), retentionValue);
+  populateSelect(els.retentionSelect, getRetentionOptions(), `${state.privacy.retentionUnit}:${state.privacy.retentionValue}`);
+  setInlineValidation('');
 }
 
 function renderConsentForm() {
-  populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
-  populateSelect(els.consentRetention, getRetentionOptions(), 'days:7');
-  els.consentTrackingEnabled.checked = false;
-  els.consentPresenceEnabled.checked = true;
-  els.consentInvisibleMode.checked = false;
+  populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode || 'domain');
+  populateSelect(els.consentRetention, getRetentionOptions(), `${state.privacy.retentionUnit}:${state.privacy.retentionValue}`);
+  els.consentTrackingEnabled.checked = Boolean(state.privacy.trackingEnabled);
+  els.consentPresenceEnabled.checked = Boolean(state.privacy.presenceSharingEnabled);
+  els.consentInvisibleMode.checked = Boolean(state.privacy.invisibleModeEnabled);
 }
 
-function renderProfileForm() {
-  els.displayName.value = state.profile?.display_name || '';
-  els.headline.value = state.profile?.headline || '';
-  els.bio.value = state.profile?.bio || '';
+function renderPrivacyTab() {
+  els.privacyPolicyContent.innerHTML = privacyHtml;
 }
 
 function renderTopSites() {
-  if (!state.topSites.length) {
-    els.topSitesList.innerHTML = '<div class="empty-state">No active sites yet. Users must opt into presence sharing before sites appear here.</div>';
+  if (!state.user || !state.topSites.length) {
+    els.topSitesList.innerHTML = '<div class="empty-state">No ranked sites are available yet. Users must opt into presence sharing before sites appear here.</div>';
     return;
   }
-  els.topSitesList.innerHTML = '';
-  state.topSites.forEach((site) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'list-item';
-    button.innerHTML = `
-      <div>
-        <strong>${site.domain}</strong>
-        <span class="muted">${new Date(site.last_seen).toLocaleTimeString()}</span>
-      </div>
-      <span class="badge">${site.active_user_count} active</span>
-    `;
-    button.addEventListener('click', () => openTopSiteDetail(site.domain));
-    els.topSitesList.appendChild(button);
-  });
-}
 
-async function openTopSiteDetail(domain) {
-  state.topSiteDetailDomain = domain;
-  els.topSiteDetailHeading.textContent = `Users on ${domain}`;
-  els.topSiteDetailCard.classList.remove('hidden');
-  els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
-  try {
-    const users = await fetchUsersOnTopSite(domain);
-    if (!users?.length) {
-      els.topSiteUsersList.innerHTML = '<div class="empty-state">No currently active users on this site.</div>';
-      return;
-    }
-    els.topSiteUsersList.innerHTML = users.map(renderUserCard).join('');
-  } catch (error) {
-    els.topSiteUsersList.innerHTML = `<div class="empty-state">${error.message}</div>`;
-  }
+  els.topSitesList.innerHTML = state.topSites
+    .map(
+      (site) => `
+        <button type="button" class="list-item site-item" data-domain="${escapeHtml(site.domain)}">
+          <div>
+            <strong>${escapeHtml(site.domain)}</strong>
+            <div class="muted">Last active ${new Date(site.last_seen).toLocaleTimeString()}</div>
+          </div>
+          <span class="badge">${site.active_user_count} active</span>
+        </button>
+      `
+    )
+    .join('');
+
+  els.topSitesList.querySelectorAll('[data-domain]').forEach((button) => {
+    button.addEventListener('click', () => openTopSiteDetail(button.dataset.domain));
+  });
 }
 
 function renderUserCard(user) {
   return `
     <div class="user-card">
-      <strong>${user.display_name || 'Anonymous member'}</strong>
-      <span>${user.headline || 'No headline'}</span>
-      <p>${user.bio || 'No bio provided.'}</p>
+      <div class="user-row">
+        ${renderAvatar(user, 'small')}
+        <div>
+          <strong>${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</strong>
+          <div class="muted">${escapeHtml(user.headline || user.place_of_work || 'Connect.Me member')}</div>
+        </div>
+      </div>
+      <div class="detail-grid compact-grid">
+        <span><strong>Work:</strong> ${escapeHtml(user.place_of_work || 'Not shared')}</span>
+        <span><strong>Education:</strong> ${escapeHtml(user.education || 'Not shared')}</span>
+        <span><strong>Location:</strong> ${escapeHtml(user.current_location || 'Not shared')}</span>
+      </div>
+      <p>${escapeHtml(user.bio || 'No bio provided.')}</p>
       <small class="muted">Last seen ${new Date(user.last_seen).toLocaleTimeString()}</small>
     </div>
   `;
 }
 
-async function renderActiveUsers() {
-  const canShowPresence = state.user && state.privacy.presenceSharingEnabled && !state.privacy.invisibleModeEnabled;
-  if (!state.tabInfo?.domain) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Open a website to see who is active there.</div>';
-    return;
-  }
-  if (!canShowPresence) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Enable presence sharing and disable Invisible Mode to view live site presence.</div>';
-    return;
-  }
+async function openTopSiteDetail(domain) {
+  state.detailDomain = domain;
+  els.topSiteDetailHeading.textContent = `Users on ${domain}`;
+  els.topSiteDetailCard.classList.remove('hidden');
+  els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
+
   try {
-    const users = await fetchActiveUsersForDomain(state.tabInfo.domain);
-    const filtered = (users || []).filter((user) => user.id !== state.user?.id);
-    els.activeUsersList.innerHTML = filtered.length
-      ? filtered.map(renderUserCard).join('')
-      : '<div class="empty-state">No other active users are sharing presence on this site right now.</div>';
+    const users = await fetchUsersOnTopSite(domain);
+    els.topSiteUsersList.innerHTML = users?.length
+      ? users.map(renderUserCard).join('')
+      : '<div class="empty-state">No active users are visible on this site right now.</div>';
   } catch (error) {
-    els.activeUsersList.innerHTML = `<div class="empty-state">${error.message}</div>`;
+    els.topSiteUsersList.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
 }
 
-function renderPrivacyTab() {
-  els.privacyPolicyContent.innerHTML = privacyHtml;
+async function renderActiveUsers() {
+  if (!state.tabInfo?.domain) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Open a website to view live activity on the current domain.</div>';
+    return;
+  }
+
+  if (!state.user) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Sign in to use Connect.Me on this site.</div>';
+    return;
+  }
+
+  if (!state.privacy.consentGranted) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Save consent preferences before any presence data is shown.</div>';
+    return;
+  }
+
+  if (!hasCompleteProfile(state.profile)) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Complete your full profile to use presence and community features.</div>';
+    return;
+  }
+
+  if (!state.privacy.presenceSharingEnabled || state.privacy.invisibleModeEnabled) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Turn on presence sharing and turn off Invisible Mode to see other active users here.</div>';
+    return;
+  }
+
+  try {
+    const users = await fetchActiveUsersForDomain(state.tabInfo.domain);
+    const others = (users || []).filter((user) => user.id !== state.user?.id);
+    els.activeUsersList.innerHTML = others.length
+      ? others.map(renderUserCard).join('')
+      : '<div class="empty-state">No other active users are visible on this site right now.</div>';
+  } catch (error) {
+    els.activeUsersList.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+  }
 }
 
 function switchTab(tabId) {
@@ -232,6 +349,11 @@ function switchTab(tabId) {
 }
 
 async function loadTopSites() {
+  if (!state.user) {
+    state.topSites = [];
+    renderTopSites();
+    return;
+  }
   try {
     state.topSites = await fetchTopSites();
   } catch (_error) {
@@ -243,6 +365,7 @@ async function loadTopSites() {
 async function refreshState() {
   state.tabInfo = await getCurrentTabInfo();
   renderDomainBadge();
+
   state.user = await getCachedUser();
   try {
     state.user = await getCurrentUser();
@@ -264,37 +387,158 @@ async function refreshState() {
   }
 
   renderAuthState();
-  renderProfileSummary();
   renderProfileForm();
+  renderProfileSummary();
   renderConsentForm();
   renderPrivacySettingsForm();
   renderPresenceControls();
   renderPrivacyTab();
   await renderActiveUsers();
-  if (state.user) {
-    await loadTopSites();
-  } else {
-    state.topSites = [];
-    renderTopSites();
+  await loadTopSites();
+}
+
+function buildProfilePayload() {
+  return {
+    first_name: els.firstName.value.trim(),
+    last_name: els.lastName.value.trim(),
+    place_of_work: els.placeOfWork.value.trim(),
+    education: els.education.value.trim(),
+    current_location: els.currentLocation.value.trim(),
+    headline: els.headline.value.trim(),
+    bio: els.bio.value.trim(),
+    avatar_url: state.profile?.avatar_url || '',
+    avatar_path: state.profile?.avatar_path || ''
+  };
+}
+
+function validateProfilePayload(profile) {
+  const missing = [
+    ['first name', profile.first_name],
+    ['last name', profile.last_name],
+    ['place of work', profile.place_of_work],
+    ['education', profile.education],
+    ['current location', profile.current_location]
+  ].filter(([, value]) => !value);
+
+  if (missing.length) {
+    throw new Error(`Please complete the following required fields: ${missing.map(([label]) => label).join(', ')}.`);
   }
 }
 
-async function savePrivacyFromForm(source) {
-  const retention = (source === 'consent' ? els.consentRetention.value : els.retentionSelect.value).split(':');
-  const nextPrivacy = {
+function buildPrivacyPayload(source) {
+  const retentionSelection = source === 'consent' ? els.consentRetention.value : els.retentionSelect.value;
+  const retention = parseRetentionSelection(retentionSelection);
+
+  if (!retention) {
+    throw new Error('Please choose a valid retention window before saving your settings.');
+  }
+
+  const profileComplete = hasCompleteProfile(state.profile);
+  const presenceRequested = source === 'consent' ? els.consentPresenceEnabled.checked : els.presenceSharingEnabled.checked;
+  const presenceAllowed = profileComplete ? presenceRequested : false;
+
+  return {
     consentGranted: source === 'consent' ? true : els.trackingConsent.checked,
     trackingEnabled: source === 'consent' ? els.consentTrackingEnabled.checked : els.trackingEnabled.checked,
     historyMode: source === 'consent' ? els.consentHistoryMode.value : els.historyMode.value,
-    retentionUnit: retention[0],
-    retentionValue: Number(retention[1]),
-    presenceSharingEnabled: source === 'consent' ? els.consentPresenceEnabled.checked : els.presenceSharingEnabled.checked,
+    retentionUnit: retention.retentionUnit,
+    retentionValue: retention.retentionValue,
+    presenceSharingEnabled: presenceAllowed,
     invisibleModeEnabled: source === 'consent' ? els.consentInvisibleMode.checked : els.invisibleModeEnabled.checked
   };
-  await upsertPrivacySettings(nextPrivacy);
-  state.privacy = nextPrivacy;
+}
+
+async function savePrivacy(source) {
+  const payload = buildPrivacyPayload(source);
+  await upsertPrivacySettings(payload);
+  state.privacy = payload;
+
+  if (!payload.presenceSharingEnabled || payload.invisibleModeEnabled) {
+    chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+  } else {
+    chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'privacy-updated' });
+  }
+
   renderPresenceControls();
   renderPrivacySettingsForm();
-  chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'privacy-updated' });
+  await renderActiveUsers();
+}
+
+async function togglePresence(enabled) {
+  if (!state.user) {
+    setStatus('Please log in before changing presence settings.', 'error');
+    return;
+  }
+  if (!state.privacy.consentGranted) {
+    setStatus('Please save consent preferences before enabling presence sharing.', 'error');
+    return;
+  }
+  if (!hasCompleteProfile(state.profile)) {
+    setStatus('Complete your full profile before enabling presence sharing.', 'error');
+    renderPresenceControls();
+    return;
+  }
+
+  try {
+    state.privacy = await updatePresenceSharingPreference(enabled);
+    renderPresenceControls();
+    await renderActiveUsers();
+    if (enabled && !state.privacy.invisibleModeEnabled) {
+      chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'presence-enabled' });
+    } else {
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+    }
+    setStatus('Settings saved successfully', 'success');
+  } catch (error) {
+    renderPresenceControls();
+    setStatus(error.message, 'error');
+  }
+}
+
+async function handleProfileSubmit(event) {
+  event.preventDefault();
+  setStatus('Saving profile…');
+
+  try {
+    const profilePayload = buildProfilePayload();
+    validateProfilePayload(profilePayload);
+
+    if (state.pendingAvatar) {
+      const upload = await uploadProfileImage(state.pendingAvatar);
+      profilePayload.avatar_path = upload.path;
+      profilePayload.avatar_url = upload.publicUrl;
+      setStatus('Profile picture uploaded successfully', 'success');
+    }
+
+    state.profile = await upsertProfile(profilePayload);
+    await saveUserMetadataProfileSnapshot(state.profile);
+    state.pendingAvatar = null;
+    els.profileImage.value = '';
+    renderProfileForm();
+    renderProfileSummary();
+    renderPresenceControls();
+    await renderActiveUsers();
+    setStatus('Profile updated successfully', 'success');
+    chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'profile-updated' });
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+function bindElements() {
+  [
+    'statusBanner', 'authPanel', 'authForm', 'authEmail', 'authPassword', 'signupButton', 'consentPanel', 'consentForm',
+    'consentHistoryMode', 'consentRetention', 'consentTrackingEnabled', 'consentPresenceEnabled', 'consentInvisibleMode',
+    'profilePanel', 'profileForm', 'profilePrompt', 'logoutButton', 'avatarPreview', 'profileImage', 'firstName', 'lastName',
+    'placeOfWork', 'education', 'currentLocation', 'headline', 'bio', 'presenceQuickToggle', 'currentDomainBadge',
+    'selfProfileSummary', 'presenceSharingInline', 'presenceStateNote', 'activeUsersList', 'refreshTopSites', 'topSitesList',
+    'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteUsersList', 'closeTopSiteDetail', 'configForm', 'supabaseUrl',
+    'supabaseAnonKey', 'privacySettingsForm', 'trackingConsent', 'trackingEnabled', 'historyMode', 'retentionSelect',
+    'presenceSharingEnabled', 'invisibleModeEnabled', 'privacyValidationMessage', 'deleteHistoryButton', 'deleteAccountButton',
+    'privacyPolicyContent'
+  ].forEach((id) => {
+    els[id] = $(id);
+  });
 }
 
 async function bindEvents() {
@@ -309,57 +553,71 @@ async function bindEvents() {
       await signIn(els.authEmail.value.trim(), els.authPassword.value);
       await refreshState();
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'login' });
-      setStatus('Logged in successfully.', 'success');
+      setStatus('Logged in successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
 
   els.signupButton.addEventListener('click', async () => {
-    setStatus('Creating your account…');
+    setStatus('Creating account…');
     try {
       await signUp(els.authEmail.value.trim(), els.authPassword.value);
       await refreshState();
-      setStatus('Account created. Check your email if Supabase email confirmation is enabled.', 'success');
-    } catch (error) {
-      setStatus(error.message, 'error');
-    }
-  });
-
-  els.profileForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    setStatus('Saving profile…');
-    try {
-      await upsertProfile({
-        display_name: els.displayName.value.trim(),
-        headline: els.headline.value.trim(),
-        bio: els.bio.value.trim(),
-        presence_visible: true
-      });
-      state.profile = await getProfile();
-      renderProfileSummary();
-      setStatus('Profile saved.', 'success');
+      setStatus('Account created successfully. Check your email if confirmation is enabled.', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
 
   els.logoutButton.addEventListener('click', async () => {
-    await signOut();
-    await refreshState();
-    setStatus('Logged out.', 'success');
-  });
-
-  els.consentForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
+    setStatus('Signing out…');
     try {
-      await savePrivacyFromForm('consent');
+      await signOut();
+      state.profile = null;
+      state.user = null;
       await refreshState();
-      setStatus('Consent saved. Tracking will only follow your chosen settings.', 'success');
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      setStatus('Logged out successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
+
+  els.consentForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setStatus('Saving consent…');
+    try {
+      await savePrivacy('consent');
+      await refreshState();
+      setStatus('Consent saved successfully', 'success');
+    } catch (error) {
+      setStatus(error.message, 'error');
+      setInlineValidation(error.message);
+    }
+  });
+
+  els.profileImage.addEventListener('change', () => {
+    const [file] = els.profileImage.files || [];
+    if (!file) {
+      state.pendingAvatar = null;
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      state.pendingAvatar = null;
+      els.profileImage.value = '';
+      setStatus('Please select an image file for your profile picture.', 'error');
+      return;
+    }
+    state.pendingAvatar = file;
+    const reader = new FileReader();
+    reader.onload = () => {
+      els.avatarPreview.innerHTML = `<img class="avatar avatar-large" src="${reader.result}" alt="Profile preview" />`;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  els.profileForm.addEventListener('submit', handleProfileSubmit);
 
   els.configForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -370,7 +628,8 @@ async function bindEvents() {
         url: els.supabaseUrl.value.trim(),
         anonKey: els.supabaseAnonKey.value.trim()
       });
-      setStatus('Supabase settings saved.', 'success');
+      setStatus('Settings saved successfully', 'success');
+      await refreshState();
     } catch (error) {
       setStatus(error.message, 'error');
     }
@@ -380,93 +639,70 @@ async function bindEvents() {
     event.preventDefault();
     setStatus('Saving privacy settings…');
     try {
-      await savePrivacyFromForm('settings');
+      await savePrivacy('settings');
       await refreshState();
-      setStatus('Privacy settings updated.', 'success');
+      setStatus('Settings saved successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
+      setInlineValidation(error.message);
     }
   });
 
-  els.presenceQuickToggle.addEventListener('click', async () => {
-    els.presenceSharingEnabled.checked = !els.presenceSharingEnabled.checked;
-    try {
-      await savePrivacyFromForm('settings');
-      await refreshState();
-      setStatus(`Presence sharing ${state.privacy.presenceSharingEnabled ? 'enabled' : 'disabled'}.`, 'success');
-    } catch (error) {
-      setStatus(error.message, 'error');
-    }
-  });
-
-  els.presenceSharingInline.addEventListener('change', async () => {
-    els.presenceSharingEnabled.checked = els.presenceSharingInline.checked;
-    try {
-      await savePrivacyFromForm('settings');
-      await refreshState();
-      setStatus('Presence preference updated.', 'success');
-    } catch (error) {
-      setStatus(error.message, 'error');
-    }
+  [els.presenceQuickToggle, els.presenceSharingInline].forEach((input) => {
+    input.addEventListener('change', async (event) => {
+      await togglePresence(event.target.checked);
+    });
   });
 
   els.deleteHistoryButton.addEventListener('click', async () => {
-    if (!confirm('Delete all stored browsing history from Supabase?')) {
-      return;
-    }
+    setStatus('Deleting stored history…');
     try {
       await deleteHistory();
-      setStatus('Stored history deleted.', 'success');
+      setStatus('Stored history deleted successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
 
   els.deleteAccountButton.addEventListener('click', async () => {
-    if (!confirm('Delete your profile, privacy settings, presence, and stored history? This action is irreversible.')) {
-      return;
-    }
+    setStatus('Deleting account data…');
     try {
       await deleteAccountData();
       await signOut();
       await refreshState();
-      setStatus('Account data deleted.', 'success');
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      setStatus('Account data deleted successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
 
   els.refreshTopSites.addEventListener('click', async () => {
+    setStatus('Refreshing top sites…');
     await loadTopSites();
-    setStatus('Top sites refreshed.', 'success');
+    setStatus('Top sites refreshed', 'success');
   });
 
   els.closeTopSiteDetail.addEventListener('click', () => {
+    state.detailDomain = null;
     els.topSiteDetailCard.classList.add('hidden');
   });
 }
 
-async function init() {
-  [
-    'authPanel', 'consentPanel', 'profilePanel', 'statusBanner', 'authForm', 'authEmail', 'authPassword', 'loginButton', 'signupButton',
-    'profileForm', 'displayName', 'headline', 'bio', 'logoutButton', 'currentDomainBadge', 'selfProfileSummary', 'activeUsersList',
-    'presenceQuickToggle', 'presenceSharingInline', 'topSitesList', 'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteUsersList',
-    'refreshTopSites', 'closeTopSiteDetail', 'configForm', 'supabaseUrl', 'supabaseAnonKey', 'privacySettingsForm', 'trackingConsent',
-    'trackingEnabled', 'historyMode', 'retentionSelect', 'presenceSharingEnabled', 'invisibleModeEnabled', 'deleteHistoryButton',
-    'deleteAccountButton', 'consentForm', 'consentHistoryMode', 'consentRetention', 'consentTrackingEnabled', 'consentPresenceEnabled',
-    'consentInvisibleMode', 'privacyPolicyContent'
-  ].forEach((id) => {
-    els[id] = $(id);
-  });
-
+async function initialize() {
+  bindElements();
+  renderPrivacyTab();
   const config = await readConfig();
   els.supabaseUrl.value = config.url || '';
   els.supabaseAnonKey.value = config.anonKey || '';
-
+  populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, 'domain');
+  populateSelect(els.retentionSelect, getRetentionOptions(), 'days:7');
+  populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
+  populateSelect(els.consentRetention, getRetentionOptions(), 'days:7');
   await bindEvents();
   await refreshState();
 }
 
-init().catch((error) => {
+initialize().catch((error) => {
   setStatus(error.message, 'error');
 });

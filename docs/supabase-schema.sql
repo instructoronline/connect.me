@@ -7,11 +7,15 @@ create extension if not exists pg_cron;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
-  display_name text not null check (char_length(display_name) between 1 and 80),
+  first_name text not null check (char_length(first_name) between 1 and 50),
+  last_name text not null check (char_length(last_name) between 1 and 50),
+  place_of_work text not null check (char_length(place_of_work) between 1 and 120),
+  education text not null check (char_length(education) between 1 and 120),
+  current_location text not null check (char_length(current_location) between 1 and 120),
   headline text not null default '' check (char_length(headline) <= 120),
   bio text not null default '' check (char_length(bio) <= 280),
+  avatar_path text not null default '',
   avatar_url text not null default '',
-  presence_visible boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -27,7 +31,7 @@ create table if not exists public.user_privacy_settings (
     (retention_unit = 'days' and retention_value between 1 and 30) or
     (retention_unit = 'months' and retention_value between 1 and 30)
   ),
-  presence_sharing_enabled boolean not null default true,
+  presence_sharing_enabled boolean not null default false,
   invisible_mode_enabled boolean not null default false,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -125,10 +129,17 @@ using (
   exists (
     select 1
     from public.user_privacy_settings ups
+    join public.profiles p on p.id = active_presence.user_id
     where ups.user_id = active_presence.user_id
       and ups.presence_sharing_enabled = true
       and ups.invisible_mode_enabled = false
       and ups.consent_granted = true
+      and p.avatar_url <> ''
+      and p.first_name <> ''
+      and p.last_name <> ''
+      and p.place_of_work <> ''
+      and p.education <> ''
+      and p.current_location <> ''
   )
 );
 
@@ -142,9 +153,14 @@ with check (auth.uid() = user_id);
 create or replace function public.get_active_users_for_domain(requested_domain text)
 returns table (
   id uuid,
-  display_name text,
+  first_name text,
+  last_name text,
+  place_of_work text,
+  education text,
+  current_location text,
   headline text,
   bio text,
+  avatar_url text,
   last_seen timestamptz
 )
 language sql
@@ -152,9 +168,14 @@ security definer
 set search_path = public
 as $$
   select p.id,
-         p.display_name,
+         p.first_name,
+         p.last_name,
+         p.place_of_work,
+         p.education,
+         p.current_location,
          p.headline,
          p.bio,
+         p.avatar_url,
          ap.last_seen
   from public.active_presence ap
   join public.profiles p on p.id = ap.user_id
@@ -164,6 +185,12 @@ as $$
     and ups.presence_sharing_enabled = true
     and ups.invisible_mode_enabled = false
     and ups.consent_granted = true
+    and p.avatar_url <> ''
+    and p.first_name <> ''
+    and p.last_name <> ''
+    and p.place_of_work <> ''
+    and p.education <> ''
+    and p.current_location <> ''
   order by ap.last_seen desc;
 $$;
 
@@ -175,10 +202,17 @@ select ap.domain,
        max(ap.last_seen) as last_seen
 from public.active_presence ap
 join public.user_privacy_settings ups on ups.user_id = ap.user_id
+join public.profiles p on p.id = ap.user_id
 where ap.expires_at > timezone('utc', now())
   and ups.presence_sharing_enabled = true
   and ups.invisible_mode_enabled = false
   and ups.consent_granted = true
+  and p.avatar_url <> ''
+  and p.first_name <> ''
+  and p.last_name <> ''
+  and p.place_of_work <> ''
+  and p.education <> ''
+  and p.current_location <> ''
 group by ap.domain
 order by active_user_count desc, last_seen desc;
 
@@ -218,21 +252,6 @@ $$;
 
 grant execute on function public.purge_expired_history() to anon, authenticated;
 
-do $$
-begin
-  if not exists (select 1 from cron.job where jobname = 'connectme-purge-expired-history') then
-    perform cron.schedule(
-      'connectme-purge-expired-history',
-      '*/10 * * * *',
-      $cron$select public.purge_expired_history();$cron$
-    );
-  end if;
-exception
-  when undefined_table then
-    raise notice 'pg_cron metadata table is unavailable; rely on extension-side purging instead.';
-end;
-$$;
-
 create or replace function public.delete_my_account_completely()
 returns void
 language plpgsql
@@ -251,3 +270,70 @@ end;
 $$;
 
 grant execute on function public.delete_my_account_completely() to authenticated;
+
+do $$
+begin
+  if not exists (select 1 from storage.buckets where id = 'avatars') then
+    insert into storage.buckets (id, name, public)
+    values ('avatars', 'avatars', true);
+  end if;
+exception
+  when undefined_table then
+    raise notice 'Supabase storage metadata is unavailable in this environment. Create the avatars bucket manually if needed.';
+end;
+$$;
+
+drop policy if exists "Avatar images are publicly readable" on storage.objects;
+create policy "Avatar images are publicly readable"
+on storage.objects
+for select
+using (bucket_id = 'avatars');
+
+drop policy if exists "Authenticated users upload own avatar images" on storage.objects;
+create policy "Authenticated users upload own avatar images"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'avatars'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists "Authenticated users update own avatar images" on storage.objects;
+create policy "Authenticated users update own avatar images"
+on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and auth.uid()::text = (storage.foldername(name))[1]
+)
+with check (
+  bucket_id = 'avatars'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists "Authenticated users delete own avatar images" on storage.objects;
+create policy "Authenticated users delete own avatar images"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+do $$
+begin
+  if not exists (select 1 from cron.job where jobname = 'connectme-purge-expired-history') then
+    perform cron.schedule(
+      'connectme-purge-expired-history',
+      '*/10 * * * *',
+      $cron$select public.purge_expired_history();$cron$
+    );
+  end if;
+exception
+  when undefined_table then
+    raise notice 'pg_cron metadata table is unavailable; rely on extension-side purging instead.';
+end;
+$$;
