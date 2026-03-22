@@ -175,6 +175,7 @@ returns table (
   current_location text,
   headline text,
   bio text,
+  avatar_path text,
   avatar_url text,
   share_avatar boolean,
   share_first_name boolean,
@@ -195,8 +196,9 @@ as $$
          case when p.share_place_of_work then p.place_of_work else '' end as place_of_work,
          case when p.share_education then p.education else '' end as education,
          case when p.share_current_location then p.current_location else '' end as current_location,
-         p.headline,
+         coalesce(p.headline, '') as headline,
          case when p.share_bio then p.bio else '' end as bio,
+         case when p.share_avatar then p.avatar_path else '' end as avatar_path,
          case when p.share_avatar then p.avatar_url else '' end as avatar_url,
          p.share_avatar,
          p.share_first_name,
@@ -214,12 +216,6 @@ as $$
     and ups.presence_sharing_enabled = true
     and ups.invisible_mode_enabled = false
     and ups.consent_granted = true
-    and p.avatar_url <> ''
-    and p.first_name <> ''
-    and p.last_name <> ''
-    and p.place_of_work <> ''
-    and p.education <> ''
-    and p.current_location <> ''
   order by ap.last_seen desc;
 $$;
 
@@ -236,12 +232,6 @@ where ap.expires_at > timezone('utc', now())
   and ups.presence_sharing_enabled = true
   and ups.invisible_mode_enabled = false
   and ups.consent_granted = true
-  and p.avatar_url <> ''
-  and p.first_name <> ''
-  and p.last_name <> ''
-  and p.place_of_work <> ''
-  and p.education <> ''
-  and p.current_location <> ''
 group by ap.domain
 order by active_user_count desc, last_seen desc;
 

@@ -613,6 +613,7 @@ export function getPublicProfile(profile = {}) {
   const merged = mergeProfileVisibility(profile);
   return {
     ...merged,
+    avatar_path: merged.share_avatar ? merged.avatar_path || '' : '',
     avatar_url: merged.share_avatar ? merged.avatar_url || '' : '',
     first_name: merged.share_first_name ? merged.first_name || '' : '',
     last_name: merged.share_last_name ? merged.last_name || '' : '',
@@ -756,6 +757,43 @@ export async function upsertProfile(profile) {
   }));
 
   return mergeProfileVisibility(savedProfile || payload);
+}
+
+async function getAvatarPublicUrlFromPath(path) {
+  if (!path) {
+    return '';
+  }
+
+  const config = await getConfig();
+  const encodedPath = String(path).split('/').map(encodeURIComponent).join('/');
+  return `${config.url}/storage/v1/object/public/avatars/${encodedPath}`;
+}
+
+export async function resolvePublicProfile(profile = {}) {
+  const publicProfile = getPublicProfile(profile);
+  if (publicProfile.avatar_url || !publicProfile.avatar_path) {
+    console.log('[Connect.Me] Avatar URL/path resolution for shared profile:', stringifyLogValue({
+      userId: publicProfile.id,
+      avatar_path: publicProfile.avatar_path,
+      avatar_url: publicProfile.avatar_url,
+      resolution: publicProfile.avatar_url ? 'existing-avatar-url' : 'no-shared-avatar-path'
+    }));
+    return publicProfile;
+  }
+
+  const avatar_url = await getAvatarPublicUrlFromPath(publicProfile.avatar_path);
+
+  console.log('[Connect.Me] Avatar URL/path resolution for shared profile:', stringifyLogValue({
+    userId: publicProfile.id,
+    avatar_path: publicProfile.avatar_path,
+    avatar_url,
+    resolution: 'derived-from-avatar-path'
+  }));
+
+  return {
+    ...publicProfile,
+    avatar_url
+  };
 }
 
 export async function uploadProfileImage(file) {
@@ -974,7 +1012,23 @@ export async function fetchActiveUsersForDomain(domain) {
     rpc: true,
     body: { requested_domain: domain }
   });
-  return (rows || []).map((row) => getPublicProfile(mergeProfileVisibility(row)));
+  console.log('[Connect.Me] Fetched shared user records for domain:', stringifyLogValue({
+    domain,
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+    rows
+  }));
+
+  return Promise.all((rows || []).map(async (row) => {
+    const mergedRow = mergeProfileVisibility(row);
+
+    console.log('[Connect.Me] Visibility flags used for shared profile rendering:', stringifyLogValue({
+      domain,
+      userId: mergedRow.id,
+      visibility: normalizeProfileVisibility(mergedRow)
+    }));
+
+    return resolvePublicProfile(mergedRow);
+  }));
 }
 
 export async function fetchTopSites() {
