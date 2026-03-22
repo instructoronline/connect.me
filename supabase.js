@@ -117,7 +117,10 @@ export function getRetentionOptions() {
 }
 
 export function parseRetentionSelection(selection) {
+  console.log('[Connect.Me] Parsing retention selection', { selection });
+
   if (!selection) {
+    console.warn('[Connect.Me] Retention parsing failed: empty selection');
     return null;
   }
 
@@ -125,18 +128,23 @@ export function parseRetentionSelection(selection) {
   if (compactMatch) {
     const retentionUnit = compactMatch[1].toLowerCase();
     const retentionValue = Number(compactMatch[2]);
-    return validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
+    const parsed = validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
+    console.log('[Connect.Me] Retention parsing result', { selection, parsed, format: 'compact' });
+    return parsed;
   }
 
   const naturalMatch = String(selection).trim().match(/^(\d{1,2})\s+(hour|hours|day|days|month|months)$/i);
   if (!naturalMatch) {
+    console.warn('[Connect.Me] Retention parsing failed: unsupported format', { selection });
     return null;
   }
 
   const retentionValue = Number(naturalMatch[1]);
   const unitToken = naturalMatch[2].toLowerCase();
   const retentionUnit = unitToken.endsWith('s') ? unitToken : `${unitToken}s`;
-  return validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
+  const parsed = validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
+  console.log('[Connect.Me] Retention parsing result', { selection, parsed, format: 'natural' });
+  return parsed;
 }
 
 function validateRetentionParts(retentionUnit, retentionValue) {
@@ -448,23 +456,29 @@ export async function uploadProfileImage(file) {
   return { path, publicUrl };
 }
 
+function normalizePrivacySettingsRow(row) {
+  if (!row) {
+    return getDefaultPrivacySettings();
+  }
+
+  return {
+    consentGranted: Boolean(row.consent_granted ?? row.consentGranted),
+    trackingEnabled: Boolean(row.tracking_enabled ?? row.trackingEnabled),
+    historyMode: row.history_mode ?? row.historyMode ?? DEFAULT_PRIVACY_SETTINGS.historyMode,
+    retentionUnit: row.retention_unit ?? row.retentionUnit ?? DEFAULT_PRIVACY_SETTINGS.retentionUnit,
+    retentionValue: Number(row.retention_value ?? row.retentionValue ?? DEFAULT_PRIVACY_SETTINGS.retentionValue),
+    presenceSharingEnabled: Boolean(row.presence_sharing_enabled ?? row.presenceSharingEnabled),
+    invisibleModeEnabled: Boolean(row.invisible_mode_enabled ?? row.invisibleModeEnabled)
+  };
+}
+
 export async function getPrivacySettings() {
   const rows = await restRequest('user_privacy_settings', {
     query: '?select=consent_granted,tracking_enabled,history_mode,retention_unit,retention_value,presence_sharing_enabled,invisible_mode_enabled&limit=1'
   });
-  const row = rows?.[0];
-  if (!row) {
-    return getDefaultPrivacySettings();
-  }
-  return {
-    consentGranted: Boolean(row.consent_granted),
-    trackingEnabled: Boolean(row.tracking_enabled),
-    historyMode: row.history_mode,
-    retentionUnit: row.retention_unit,
-    retentionValue: row.retention_value,
-    presenceSharingEnabled: Boolean(row.presence_sharing_enabled),
-    invisibleModeEnabled: Boolean(row.invisible_mode_enabled)
-  };
+  const normalized = normalizePrivacySettingsRow(rows?.[0]);
+  console.log('[Connect.Me] Loaded privacy settings from Supabase', { rows, normalized });
+  return normalized;
 }
 
 export async function upsertPrivacySettings(privacy) {
@@ -477,21 +491,28 @@ export async function upsertPrivacySettings(privacy) {
     throw new Error('Please choose a valid retention window before saving your settings.');
   }
 
+  const payload = {
+    user_id: user.id,
+    consent_granted: Boolean(privacy.consentGranted),
+    tracking_enabled: Boolean(privacy.trackingEnabled),
+    history_mode: privacy.historyMode,
+    retention_unit: privacy.retentionUnit,
+    retention_value: Number(privacy.retentionValue),
+    presence_sharing_enabled: Boolean(privacy.presenceSharingEnabled),
+    invisible_mode_enabled: Boolean(privacy.invisibleModeEnabled)
+  };
+
+  console.log('[Connect.Me] Saving consent/privacy payload', payload);
+
   const rows = await restRequest('user_privacy_settings', {
     method: 'POST',
     query: '?on_conflict=user_id',
-    body: {
-      user_id: user.id,
-      consent_granted: Boolean(privacy.consentGranted),
-      tracking_enabled: Boolean(privacy.trackingEnabled),
-      history_mode: privacy.historyMode,
-      retention_unit: privacy.retentionUnit,
-      retention_value: Number(privacy.retentionValue),
-      presence_sharing_enabled: Boolean(privacy.presenceSharingEnabled),
-      invisible_mode_enabled: Boolean(privacy.invisibleModeEnabled)
-    }
+    body: payload
   });
-  return rows?.[0] || null;
+
+  console.log('[Connect.Me] Supabase privacy save response', rows);
+
+  return normalizePrivacySettingsRow(rows?.[0] || payload);
 }
 
 export async function updatePresenceSharingPreference(enabled) {
@@ -500,8 +521,24 @@ export async function updatePresenceSharingPreference(enabled) {
     ...current,
     presenceSharingEnabled: Boolean(enabled)
   };
-  await upsertPrivacySettings(next);
-  return next;
+
+  console.log('[Connect.Me] Presence transition requested', {
+    previous: current.presenceSharingEnabled,
+    next: next.presenceSharingEnabled,
+    invisibleModeEnabled: current.invisibleModeEnabled,
+    consentGranted: current.consentGranted
+  });
+
+  const saved = await upsertPrivacySettings(next);
+
+  console.log('[Connect.Me] Presence transition saved', {
+    previous: current.presenceSharingEnabled,
+    saved: saved.presenceSharingEnabled,
+    invisibleModeEnabled: saved.invisibleModeEnabled,
+    consentGranted: saved.consentGranted
+  });
+
+  return saved;
 }
 
 export function extractTabInfo(url) {
