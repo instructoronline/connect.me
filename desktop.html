@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect.Me Desktop Workspace</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="page-body desktop-body light-theme">
+    <main class="page-shell desktop-shell">
+      <header class="page-header desktop-header card soft-card">
+        <div>
+          <p class="eyebrow">Connect.Me desktop workspace</p>
+          <h1>Professional presence dashboard</h1>
+          <p class="subtitle">A spacious desktop-style workspace for current site visibility, community presence, profile editing, and privacy controls.</p>
+        </div>
+        <div class="header-actions stack-sm desktop-header-actions">
+          <label class="mini-toggle" for="presenceQuickToggle">
+            <span>Presence</span>
+            <input id="presenceQuickToggle" type="checkbox" />
+          </label>
+          <button id="openDesktopButton" type="button" class="secondary small">Full Desktop Version</button>
+        </div>
+      </header>
+
+      <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
+
+      <section class="desktop-top-grid">
+        <section id="authPanel" class="card hidden">
+          <div class="section-heading">
+            <div>
+              <h2>Sign in to begin</h2>
+              <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
+            </div>
+          </div>
+          <form id="authForm" class="stack-md">
+            <label>
+              Email address
+              <input id="authEmail" type="email" autocomplete="username" required />
+            </label>
+            <label>
+              Password
+              <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+            </label>
+            <div class="button-row">
+              <button id="loginButton" type="submit">Log in</button>
+              <button id="signupButton" type="button" class="secondary">Sign up</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="consentPanel" class="card hidden">
+          <div class="section-heading">
+            <div>
+              <h2>Consent required</h2>
+              <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
+            </div>
+          </div>
+          <form id="consentForm" class="stack-md">
+            <label>
+              History scope
+              <select id="consentHistoryMode"></select>
+            </label>
+            <label>
+              Retention window
+              <select id="consentRetention"></select>
+            </label>
+            <div class="checklist">
+              <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
+              <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
+              <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
+            </div>
+            <div class="callout info">Your data will not be shared with any third parties. You can change or revoke these settings at any time.</div>
+            <button type="submit">Save consent preferences</button>
+          </form>
+        </section>
+
+        <section id="profilePanel" class="card hidden">
+          <div class="section-heading align-start">
+            <div>
+              <h2>Profile setup</h2>
+              <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
+            </div>
+            <button id="logoutButton" type="button" class="secondary small">Log out</button>
+          </div>
+          <form id="profileForm" class="stack-md" enctype="multipart/form-data">
+            <div class="profile-edit-layout desktop-profile-layout">
+              <div class="avatar-column">
+                <div id="avatarPreview" class="avatar avatar-large">CM</div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="profileImage">Profile picture</label>
+                    <label class="visibility-select" for="shareAvatar">
+                      <span>Visibility</span>
+                      <select id="shareAvatar">
+                        <option value="true">Share</option>
+                        <option value="false">Not share</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="file-input-label">
+                    Upload avatar
+                    <input id="profileImage" type="file" accept="image/*" />
+                  </label>
+                  <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
+                </div>
+              </div>
+              <div class="profile-fields stack-md">
+                <div class="desktop-profile-grid">
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="firstName">First name</label>
+                      <label class="visibility-select" for="shareFirstName"><span>Visibility</span><select id="shareFirstName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <input id="firstName" type="text" maxlength="50" required />
+                  </div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="lastName">Last name</label>
+                      <label class="visibility-select" for="shareLastName"><span>Visibility</span><select id="shareLastName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <input id="lastName" type="text" maxlength="50" required />
+                  </div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="placeOfWork">Place of work</label>
+                      <label class="visibility-select" for="sharePlaceOfWork"><span>Visibility</span><select id="sharePlaceOfWork"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <input id="placeOfWork" type="text" maxlength="120" required />
+                  </div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="education">Education</label>
+                      <label class="visibility-select" for="shareEducation"><span>Visibility</span><select id="shareEducation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <input id="education" type="text" maxlength="120" required />
+                  </div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="currentLocation">Current location</label>
+                      <label class="visibility-select" for="shareCurrentLocation"><span>Visibility</span><select id="shareCurrentLocation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <input id="currentLocation" type="text" maxlength="120" required />
+                  </div>
+                  <div class="profile-field-card">
+                    <label class="field-label" for="headline">Professional headline</label>
+                    <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
+                  </div>
+                </div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="bio">Short bio</label>
+                    <label class="visibility-select" for="shareBio"><span>Visibility</span><select id="shareBio"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <textarea id="bio" rows="4" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
+                </div>
+              </div>
+            </div>
+            <button type="submit">Save profile</button>
+          </form>
+        </section>
+      </section>
+
+      <nav class="tab-bar desktop-tab-bar" aria-label="Desktop workspace navigation">
+        <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
+        <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
+        <button class="tab-link" data-tab="settingsTab">Settings</button>
+        <button class="tab-link" data-tab="privacyTab">Privacy</button>
+      </nav>
+
+      <div class="desktop-workspace-grid">
+        <section id="currentSiteTab" class="tab-panel active desktop-span-two">
+          <article class="card stack-md desktop-panel-fill">
+            <div class="section-heading">
+              <div>
+                <h2>Current Site</h2>
+                <p class="muted">See the currently tracked site detail, your public profile summary, and live presence on the same site.</p>
+              </div>
+              <span id="currentDomainBadge" class="badge">No website detected</span>
+            </div>
+
+            <section class="site-url-card stack-sm">
+              <div class="section-heading compact">
+                <div>
+                  <h3>Tracked site detail</h3>
+                  <p id="currentSitePrivacyNote" class="muted small-text">Only the domain is visible because detailed tracking is currently off.</p>
+                </div>
+                <button id="copyCurrentUrlButton" type="button" class="secondary small">Copy visible URL</button>
+              </div>
+              <div id="currentSiteUrlSummary" class="url-summary empty-state">Open a supported website to view current site details.</div>
+            </section>
+
+            <div class="desktop-inner-grid">
+              <section class="stack-sm">
+                <h3>User profile</h3>
+                <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
+              </section>
+              <section class="stack-sm">
+                <div class="section-heading compact">
+                  <div>
+                    <h3>Live presence</h3>
+                    <p class="muted small-text">Available only when presence sharing is on and Invisible Mode is off.</p>
+                  </div>
+                  <label class="mini-toggle" for="presenceSharingInline">
+                    <span>ON/OFF</span>
+                    <input id="presenceSharingInline" type="checkbox" />
+                  </label>
+                </div>
+                <div id="presenceStateNote" class="callout subtle">Enable presence sharing to see active members on this site.</div>
+                <div id="activeUsersList" class="list"></div>
+              </section>
+            </div>
+          </article>
+        </section>
+
+        <section id="topSitesTab" class="tab-panel active">
+          <article class="card stack-md desktop-panel-fill">
+            <div class="section-heading">
+              <div>
+                <h2>Top Sites</h2>
+                <p class="muted">Domains with the highest number of active Connect.Me users right now.</p>
+              </div>
+              <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
+            </div>
+            <div class="callout subtle small-text">Top-site rankings remain domain-based. User cards reveal more detailed tracked paths or full URLs only when those users have consented to share that detail.</div>
+            <div id="topSitesList" class="list"></div>
+          </article>
+        </section>
+
+        <section id="settingsTab" class="tab-panel active">
+          <article class="card stack-md desktop-panel-fill">
+            <h2>Settings, consent, and visibility controls</h2>
+            <form id="privacySettingsForm" class="stack-md">
+              <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
+              <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
+              <label>
+                What history should be stored?
+                <select id="historyMode"></select>
+              </label>
+              <label>
+                Retention period
+                <select id="retentionSelect"></select>
+              </label>
+              <label class="checkbox-row"><input id="presenceSharingEnabled" type="checkbox" /> Presence sharing ON/OFF</label>
+              <label class="checkbox-row"><input id="invisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
+              <div id="privacyValidationMessage" class="callout subtle hidden"></div>
+              <button type="submit">Save privacy settings</button>
+            </form>
+
+            <form id="configForm" class="stack-md top-divider">
+              <h3>Built-in Supabase configuration</h3>
+              <label>
+                Supabase URL
+                <input id="supabaseUrl" type="url" readonly aria-readonly="true" />
+              </label>
+              <label>
+                Supabase anon key
+                <textarea id="supabaseAnonKey" rows="4" readonly aria-readonly="true"></textarea>
+              </label>
+              <button type="submit" class="secondary">Reload built-in configuration</button>
+            </form>
+
+            <div class="button-row">
+              <button id="deleteHistoryButton" type="button" class="danger">Delete stored history</button>
+              <button id="deleteAccountButton" type="button" class="danger ghost">Delete account data</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="privacyTab" class="tab-panel active desktop-span-two">
+          <article id="topSiteDetailCard" class="card stack-md hidden">
+            <div class="section-heading">
+              <div>
+                <h2 id="topSiteDetailHeading">Site detail</h2>
+                <p id="topSiteDetailSubheading" class="muted">Currently active users on the selected website.</p>
+              </div>
+              <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
+            </div>
+            <div id="topSiteUsersList" class="list"></div>
+          </article>
+          <article class="card stack-md desktop-panel-fill">
+            <h2>Privacy Policy</h2>
+            <div id="privacyPolicyContent" class="privacy-copy"></div>
+          </article>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="desktop.js"></script>
+  </body>
+</html>
