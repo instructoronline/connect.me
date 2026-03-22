@@ -355,6 +355,31 @@ textarea:disabled {
   font-style: italic;
 }
 
+.user-card-debug {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+.user-card-debug summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.user-card-debug pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f7f9fc;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .user-meta-list,
 .visibility-list {
   display: grid;
