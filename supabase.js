@@ -1013,6 +1013,48 @@ export async function clearPresence() {
   }
 }
 
+async function fetchProfileRowsByIds(userIds = []) {
+  const uniqueIds = [...new Set((userIds || []).filter(Boolean))];
+  if (!uniqueIds.length) {
+    return [];
+  }
+
+  const selectFields = [
+    'id',
+    'display_name',
+    'email',
+    'first_name',
+    'last_name',
+    'place_of_work',
+    'education',
+    'current_location',
+    'headline',
+    'bio',
+    'avatar_path',
+    'avatar_url',
+    'share_avatar',
+    'share_first_name',
+    'share_last_name',
+    'share_place_of_work',
+    'share_education',
+    'share_current_location',
+    'share_bio',
+    'created_at',
+    'updated_at'
+  ].join(',');
+  const idFilter = uniqueIds.map((id) => String(id).trim()).join(',');
+  const query = `?select=${selectFields}&id=in.(${encodeURIComponent(idFilter)})`;
+  const rows = await restRequest('profiles', { query });
+
+  console.log('[Connect.Me] Fetched profile rows for shared-user cards:', stringifyLogValue({
+    requestedUserIds: uniqueIds,
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+    rows
+  }));
+
+  return rows || [];
+}
+
 export async function fetchActiveUsersForDomain(domain) {
   const rows = await restRequest('get_active_users_for_domain', {
     method: 'POST',
@@ -1025,16 +1067,45 @@ export async function fetchActiveUsersForDomain(domain) {
     rows
   }));
 
-  return Promise.all((rows || []).map(async (row) => {
-    const mergedRow = mergeProfileVisibility(row);
+  const profileRows = await fetchProfileRowsByIds((rows || []).map((row) => row.id));
+  const profilesById = new Map(profileRows.map((row) => [row.id, row]));
 
+  return Promise.all((rows || []).map(async (row) => {
+    const profileRow = profilesById.get(row.id) || {};
+    const mergedRow = mergeProfileVisibility({
+      ...row,
+      ...profileRow,
+      last_seen: row.last_seen,
+      professional_headline: profileRow.professional_headline ?? profileRow.headline ?? row.professional_headline ?? row.headline ?? ''
+    });
+    const visibility = normalizeProfileVisibility(mergedRow);
+
+    console.log('[Connect.Me] Raw payload returned for shared-user card:', stringifyLogValue({
+      domain,
+      userId: row.id,
+      rpcRow: row,
+      profileRow,
+      mergedRow
+    }));
     console.log('[Connect.Me] Visibility flags used for shared profile rendering:', stringifyLogValue({
       domain,
       userId: mergedRow.id,
-      visibility: normalizeProfileVisibility(mergedRow)
+      visibility
     }));
 
-    return resolvePublicProfile(mergedRow);
+    const resolvedProfile = await resolvePublicProfile(mergedRow);
+
+    return {
+      ...resolvedProfile,
+      __sharedCardDebug: {
+        domain,
+        rpcRow: row,
+        profileRow,
+        mergedRow,
+        visibility,
+        resolvedAvatarUrl: resolvedProfile.avatar_url || ''
+      }
+    };
   }));
 }
 

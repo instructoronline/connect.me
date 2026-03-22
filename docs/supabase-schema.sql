@@ -7,6 +7,7 @@ create extension if not exists pg_cron;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
+  display_name text not null default '',
   first_name text not null check (char_length(first_name) between 1 and 50),
   last_name text not null check (char_length(last_name) between 1 and 50),
   place_of_work text not null check (char_length(place_of_work) between 1 and 120),
@@ -23,10 +24,12 @@ create table if not exists public.profiles (
   share_education boolean not null default true,
   share_current_location boolean not null default true,
   share_bio boolean not null default true,
+  share_professional_headline boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.profiles add column if not exists display_name text not null default '';
 alter table public.profiles add column if not exists share_avatar boolean not null default true;
 alter table public.profiles add column if not exists share_first_name boolean not null default true;
 alter table public.profiles add column if not exists share_last_name boolean not null default true;
@@ -34,6 +37,7 @@ alter table public.profiles add column if not exists share_place_of_work boolean
 alter table public.profiles add column if not exists share_education boolean not null default true;
 alter table public.profiles add column if not exists share_current_location boolean not null default true;
 alter table public.profiles add column if not exists share_bio boolean not null default true;
+alter table public.profiles add column if not exists share_professional_headline boolean not null default true;
 
 create table if not exists public.user_privacy_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -168,6 +172,8 @@ with check (auth.uid() = user_id);
 create or replace function public.get_active_users_for_domain(requested_domain text)
 returns table (
   id uuid,
+  display_name text,
+  email text,
   first_name text,
   last_name text,
   place_of_work text,
@@ -185,6 +191,7 @@ returns table (
   share_education boolean,
   share_current_location boolean,
   share_bio boolean,
+  share_professional_headline boolean,
   last_seen timestamptz
 )
 language sql
@@ -192,16 +199,18 @@ security definer
 set search_path = public
 as $$
   select p.id,
-         case when p.share_first_name then p.first_name else '' end as first_name,
-         case when p.share_last_name then p.last_name else '' end as last_name,
-         case when p.share_place_of_work then p.place_of_work else '' end as place_of_work,
-         case when p.share_education then p.education else '' end as education,
-         case when p.share_current_location then p.current_location else '' end as current_location,
+         p.display_name,
+         p.email,
+         p.first_name,
+         p.last_name,
+         p.place_of_work,
+         p.education,
+         p.current_location,
          coalesce(p.headline, '') as headline,
          coalesce(p.headline, '') as professional_headline,
-         case when p.share_bio then p.bio else '' end as bio,
-         case when p.share_avatar then p.avatar_path else '' end as avatar_path,
-         case when p.share_avatar then p.avatar_url else '' end as avatar_url,
+         p.bio,
+         p.avatar_path,
+         p.avatar_url,
          p.share_avatar,
          p.share_first_name,
          p.share_last_name,
@@ -209,6 +218,7 @@ as $$
          p.share_education,
          p.share_current_location,
          p.share_bio,
+         coalesce(p.share_professional_headline, true) as share_professional_headline,
          ap.last_seen
   from public.active_presence ap
   join public.profiles p on p.id = ap.user_id

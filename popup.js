@@ -72,6 +72,9 @@ const state = {
 
 const els = {};
 
+const SHARED_CARD_DEBUG_ENABLED = true;
+
+
 function $(id) {
   return document.getElementById(id);
 }
@@ -435,7 +438,8 @@ function renderTopSites() {
 }
 
 function renderUserCard(user) {
-  logStructured('log', '[Connect.Me] Raw fetched shared-user payload', user);
+  const rawPayload = user?.__sharedCardDebug || null;
+  logStructured('log', '[Connect.Me] Raw fetched shared-user payload', rawPayload || user);
 
   const visibility = normalizeProfileVisibility(user || {});
   const publicUser = getPublicProfile(user);
@@ -452,39 +456,48 @@ function renderUserCard(user) {
     professional_headline: professionalHeadline
   };
   const sharedName = [sharedFields.first_name, sharedFields.last_name].filter(Boolean).join(' ').trim();
-  const hasSharedName = Boolean(sharedName);
-  const hasPrimaryText = Boolean(sharedFields.professional_headline || sharedFields.place_of_work || sharedFields.education || sharedFields.current_location || sharedFields.bio);
-  const titleMarkup = hasSharedName
-    ? `<strong>${escapeHtml(sharedName)}</strong>`
-    : '<strong>Connect.Me member</strong>';
-  const subtitleText = sharedFields.professional_headline || sharedFields.place_of_work || '';
-  const subtitleMarkup = subtitleText
-    ? `<div class="muted">${escapeHtml(subtitleText)}</div>`
-    : (!hasSharedName && !sharedFields.avatar_url && !hasPrimaryText
-      ? '<div class="muted">Connect.Me member</div>'
-      : '');
+  const titleText = sharedName || sharedFields.professional_headline || sharedFields.place_of_work || sharedFields.education || sharedFields.current_location || 'Connect.Me member';
+  const subtitleCandidates = [
+    titleText !== sharedFields.professional_headline ? sharedFields.professional_headline : '',
+    titleText !== sharedFields.place_of_work ? sharedFields.place_of_work : '',
+    titleText !== sharedFields.education ? sharedFields.education : '',
+    titleText !== sharedFields.current_location ? sharedFields.current_location : ''
+  ].filter(Boolean);
+  const subtitleText = subtitleCandidates[0] || '';
   const sharedMeta = [
     sharedFields.place_of_work ? `<span class="meta-pill">Work: ${escapeHtml(sharedFields.place_of_work)}</span>` : '',
     sharedFields.education ? `<span class="meta-pill">Education: ${escapeHtml(sharedFields.education)}</span>` : '',
     sharedFields.current_location ? `<span class="meta-pill">Location: ${escapeHtml(sharedFields.current_location)}</span>` : ''
   ].filter(Boolean).join('');
-  const sharedFieldCount = [
-    Boolean(sharedFields.avatar_url),
-    Boolean(sharedFields.first_name),
-    Boolean(sharedFields.last_name),
-    Boolean(sharedFields.place_of_work),
-    Boolean(sharedFields.education),
-    Boolean(sharedFields.current_location),
-    Boolean(sharedFields.bio),
-    Boolean(sharedFields.professional_headline)
-  ].filter(Boolean).length;
+  const sharedFieldEntries = [
+    ['avatar_url', Boolean(sharedFields.avatar_url)],
+    ['first_name', Boolean(sharedFields.first_name)],
+    ['last_name', Boolean(sharedFields.last_name)],
+    ['place_of_work', Boolean(sharedFields.place_of_work)],
+    ['education', Boolean(sharedFields.education)],
+    ['current_location', Boolean(sharedFields.current_location)],
+    ['bio', Boolean(sharedFields.bio)],
+    ['professional_headline', Boolean(sharedFields.professional_headline)]
+  ];
+  const renderedFieldKeys = sharedFieldEntries.filter(([, isRendered]) => isRendered).map(([field]) => field);
+  const sharedFieldCount = renderedFieldKeys.length;
+  const hasSharedNonFallbackText = renderedFieldKeys.some((field) => field !== 'avatar_url');
   const limitedProfileNote = sharedFieldCount <= 2
     ? '<p class="muted hidden-field-note">This user is sharing a limited public profile.</p>'
     : '';
   const detailMarkup = [
     sharedMeta ? `<div class="user-meta-list">${sharedMeta}</div>` : '',
     sharedFields.bio ? `<p>${escapeHtml(sharedFields.bio)}</p>` : '',
-    limitedProfileNote
+    limitedProfileNote,
+    SHARED_CARD_DEBUG_ENABLED
+      ? `<details class="user-card-debug"><summary>Shared card debug</summary><pre>${escapeHtml(stringifyForLog({
+        rawPayload,
+        shareFlags: visibility,
+        resolvedAvatarUrl: sharedFields.avatar_url || '',
+        renderedFieldKeys,
+        sharedFields
+      }))}</pre></details>`
+      : ''
   ].filter(Boolean).join('');
   const avatarProfile = {
     ...publicUser,
@@ -493,6 +506,10 @@ function renderUserCard(user) {
     first_name: sharedFields.first_name,
     last_name: sharedFields.last_name
   };
+  const titleMarkup = `<strong>${escapeHtml(titleText)}</strong>`;
+  const subtitleMarkup = subtitleText
+    ? `<div class="muted">${escapeHtml(subtitleText)}</div>`
+    : (!hasSharedNonFallbackText ? '<div class="muted">Connect.Me member</div>' : '');
 
   logStructured('log', '[Connect.Me] Share flags for shared-user card', {
     userId: publicUser.id,
@@ -506,8 +523,10 @@ function renderUserCard(user) {
   logStructured('log', '[Connect.Me] Final rendered field set for shared-user card', {
     userId: publicUser.id,
     sharedFieldCount,
+    renderedFieldKeys,
     renderedFields: {
-      has_name: hasSharedName,
+      title: titleText,
+      subtitle: subtitleText,
       professional_headline: sharedFields.professional_headline,
       place_of_work: sharedFields.place_of_work,
       education: sharedFields.education,
