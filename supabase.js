@@ -163,7 +163,7 @@ function stringifyLogValue(value) {
     return value;
   }
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value, null, 2);
   } catch (_error) {
     return String(value);
   }
@@ -611,8 +611,15 @@ export function mergeProfileVisibility(profile = {}) {
 
 export function getPublicProfile(profile = {}) {
   const merged = mergeProfileVisibility(profile);
+  const professionalHeadline = merged.professional_headline ?? merged.headline ?? '';
+  const shareProfessionalHeadline = merged.share_professional_headline == null
+    ? true
+    : Boolean(merged.share_professional_headline);
+
   return {
     ...merged,
+    headline: shareProfessionalHeadline ? professionalHeadline : '',
+    professional_headline: shareProfessionalHeadline ? professionalHeadline : '',
     avatar_path: merged.share_avatar ? merged.avatar_path || '' : '',
     avatar_url: merged.share_avatar ? merged.avatar_url || '' : '',
     first_name: merged.share_first_name ? merged.first_name || '' : '',
@@ -772,7 +779,7 @@ async function getAvatarPublicUrlFromPath(path) {
 export async function resolvePublicProfile(profile = {}) {
   const publicProfile = getPublicProfile(profile);
   if (publicProfile.avatar_url || !publicProfile.avatar_path) {
-    console.log('[Connect.Me] Avatar URL/path resolution for shared profile:', stringifyLogValue({
+    console.log('[Connect.Me] Resolved avatar URL for shared profile:', stringifyLogValue({
       userId: publicProfile.id,
       avatar_path: publicProfile.avatar_path,
       avatar_url: publicProfile.avatar_url,
@@ -783,7 +790,7 @@ export async function resolvePublicProfile(profile = {}) {
 
   const avatar_url = await getAvatarPublicUrlFromPath(publicProfile.avatar_path);
 
-  console.log('[Connect.Me] Avatar URL/path resolution for shared profile:', stringifyLogValue({
+  console.log('[Connect.Me] Resolved avatar URL for shared profile:', stringifyLogValue({
     userId: publicProfile.id,
     avatar_path: publicProfile.avatar_path,
     avatar_url,
