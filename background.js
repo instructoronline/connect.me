@@ -16,11 +16,66 @@ import {
 const HEARTBEAT_ALARM = 'connectme-heartbeat';
 const PURGE_ALARM = 'connectme-purge';
 const LAST_TRACKED_TAB_KEY = 'connectme-last-tracked';
+const ACTIVE_CONTEXT_KEY = 'connectme-active-context';
 const PRESENCE_EXPIRY_MS = 3 * 60 * 1000;
 
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tabs[0] || null;
+}
+
+function stringifyForLog(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function logStructured(level, message, payload) {
+  const logger = console[level] || console.log;
+  if (payload === undefined) {
+    logger(message);
+    return;
+  }
+  logger(`${message} ${stringifyForLog(payload)}`);
+}
+
+async function broadcastMessage(message) {
+  try {
+    await chrome.runtime.sendMessage(message);
+  } catch (_error) {
+    // Ignore when no popup listener is currently connected.
+  }
+}
+
+async function persistActiveContext(tabInfo, reason) {
+  const payload = {
+    domain: tabInfo?.domain || null,
+    path: tabInfo?.path || null,
+    url: tabInfo?.url || null,
+    title: tabInfo?.title || null,
+    detectedAt: new Date().toISOString(),
+    reason
+  };
+
+  await setLocalStore({ [ACTIVE_CONTEXT_KEY]: payload });
+  return payload;
+}
+
+async function notifyPopupRefresh(reason, tabInfo, extras = {}) {
+  const context = await persistActiveContext(tabInfo, reason);
+  logStructured('log', '[Connect.Me] Popup refresh trigger', { reason, context, extras });
+  await broadcastMessage({
+    type: 'ACTIVE_CONTEXT_CHANGED',
+    reason,
+    context,
+    ...extras
+  });
 }
 
 function shouldTrackHistory(privacy) {
@@ -41,6 +96,7 @@ async function trackActiveContext(reason = 'heartbeat') {
     const session = await ensureValidSession();
     if (!session?.user) {
       await clearPresence().catch(() => null);
+      await notifyPopupRefresh(reason, null, { topSitesRefresh: true, presenceCleared: true });
       return;
     }
 
@@ -54,14 +110,35 @@ async function trackActiveContext(reason = 'heartbeat') {
     const profile = session.user.user_metadata?.connectme_profile || null;
     const tab = await getActiveTab();
     const tabInfo = extractTabInfo(tab?.url);
+    const nowIso = new Date().toISOString();
+    const { [LAST_TRACKED_TAB_KEY]: lastTracked } = await chrome.storage.local.get(LAST_TRACKED_TAB_KEY);
+    const previousDomain = lastTracked?.domain || null;
+    const currentDomain = tabInfo?.domain || null;
+    const domainChanged = previousDomain !== currentDomain;
+
+    if (domainChanged) {
+      logStructured('log', '[Connect.Me] Detected domain change', {
+        reason,
+        previousDomain,
+        currentDomain,
+        tabId: tab?.id || null,
+        windowId: tab?.windowId || null
+      });
+    }
 
     if (!privacy.consentGranted || !tabInfo) {
       await clearPresence().catch(() => null);
+      await setLocalStore({
+        [LAST_TRACKED_TAB_KEY]: {
+          ...lastTracked,
+          domain: currentDomain,
+          siteIdentifier: null,
+          trackedAt: nowIso
+        }
+      });
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true });
       return;
     }
-
-    const nowIso = new Date().toISOString();
-    const { [LAST_TRACKED_TAB_KEY]: lastTracked } = await chrome.storage.local.get(LAST_TRACKED_TAB_KEY);
 
     if (shouldTrackHistory(privacy)) {
       const siteIdentifier =
@@ -83,32 +160,47 @@ async function trackActiveContext(reason = 'heartbeat') {
           visited_at: nowIso,
           expires_at: buildExpiryIso(privacy.retentionUnit, privacy.retentionValue)
         }).catch(() => null);
-
-        await setLocalStore({
-          [LAST_TRACKED_TAB_KEY]: {
-            siteIdentifier,
-            trackedAt: nowIso
-          }
-        });
       }
+
+      await setLocalStore({
+        [LAST_TRACKED_TAB_KEY]: {
+          domain: tabInfo.domain,
+          siteIdentifier,
+          trackedAt: nowIso
+        }
+      });
+    } else {
+      await setLocalStore({
+        [LAST_TRACKED_TAB_KEY]: {
+          domain: tabInfo.domain,
+          siteIdentifier: null,
+          trackedAt: nowIso
+        }
+      });
     }
 
     if (shouldSharePresence(privacy, profile)) {
-      await upsertPresence({
+      const presencePayload = {
         domain: tabInfo.domain,
         path: tabInfo.path,
         full_url: tabInfo.url,
         page_title: tab?.title || tabInfo.title,
         last_seen: nowIso,
         expires_at: new Date(Date.now() + PRESENCE_EXPIRY_MS).toISOString()
-      }).catch(() => null);
+      };
+
+      logStructured('log', '[Connect.Me] Presence update payload', { reason, presencePayload });
+      await upsertPresence(presencePayload).catch(() => null);
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceUpdated: true });
     } else {
       await clearPresence().catch(() => null);
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true });
     }
   } catch (_error) {
     // Avoid breaking the service worker if Supabase is temporarily unavailable.
   }
 }
+
 
 function scheduleAlarms() {
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
@@ -140,18 +232,25 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-chrome.tabs.onActivated.addListener(async () => {
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  logStructured('log', '[Connect.Me] Active tab change', activeInfo);
   await trackActiveContext('tab-activated');
 });
 
-chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
-  if (tab.active && changeInfo.status === 'complete') {
-    await trackActiveContext('tab-updated');
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (tab.active && (changeInfo.status === 'complete' || typeof changeInfo.url === 'string')) {
+    logStructured('log', '[Connect.Me] Active tab updated', {
+      tabId,
+      status: changeInfo.status || null,
+      url: changeInfo.url || tab?.url || null
+    });
+    await trackActiveContext(changeInfo.url ? 'domain-updated' : 'tab-updated');
   }
 });
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+    logStructured('log', '[Connect.Me] Window focus changed', { windowId });
     await trackActiveContext('window-focus');
   }
 });
@@ -166,6 +265,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === 'CLEAR_PRESENCE') {
     clearPresence()
+      .then(async () => {
+        await notifyPopupRefresh(message.reason || 'presence-cleared', null, { topSitesRefresh: true, presenceCleared: true });
+        sendResponse({ ok: true });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === 'GET_ACTIVE_CONTEXT') {
+    chrome.storage.local.get(ACTIVE_CONTEXT_KEY)
+      .then((result) => sendResponse({ ok: true, context: result?.[ACTIVE_CONTEXT_KEY] || null }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === 'REFRESH_TOP_SITES') {
+    logStructured('log', '[Connect.Me] Top-sites refresh trigger', { reason: message.reason || 'manual' });
+    broadcastMessage({ type: 'TOP_SITES_REFRESH_REQUESTED', reason: message.reason || 'manual' })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;

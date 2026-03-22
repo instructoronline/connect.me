@@ -62,7 +62,12 @@ const state = {
   tabInfo: null,
   topSites: [],
   detailDomain: null,
-  pendingAvatar: null
+  pendingAvatar: null,
+  refreshVersion: 0,
+  topSitesPollId: null,
+  activeUsersRequestId: 0,
+  topSitesRequestId: 0,
+  detailUsersRequestId: 0
 };
 
 const els = {};
@@ -90,6 +95,20 @@ function logStructured(level, message, payload) {
     return;
   }
   logger(`${message} ${stringifyForLog(payload)}`);
+}
+
+function formatActiveUserLabel(count) {
+  const safeCount = Number(count) || 0;
+  return `${safeCount} active user${safeCount === 1 ? '' : 's'}`;
+}
+
+function bumpRefreshVersion() {
+  state.refreshVersion += 1;
+  return state.refreshVersion;
+}
+
+function isStaleRefresh(version) {
+  return version !== state.refreshVersion;
 }
 
 function escapeHtml(value = '') {
@@ -233,6 +252,15 @@ function populateSelect(select, options, selectedValue) {
 }
 
 async function getCurrentTabInfo() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_CONTEXT' });
+    if (response?.ok && response.context?.url) {
+      return extractTabInfo(response.context.url);
+    }
+  } catch (_error) {
+    // Fall back to querying the active tab directly when the service worker is unavailable.
+  }
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return extractTabInfo(tab?.url);
 }
@@ -395,7 +423,7 @@ function renderTopSites() {
             <strong>${escapeHtml(site.domain)}</strong>
             <div class="muted">Last active ${new Date(site.last_seen).toLocaleTimeString()}</div>
           </div>
-          <span class="badge">${site.active_user_count} active</span>
+          <span class="badge">${formatActiveUserLabel(site.active_user_count)}</span>
         </button>
       `
     )
@@ -435,22 +463,32 @@ function renderUserCard(user) {
 
 async function openTopSiteDetail(domain) {
   state.detailDomain = domain;
+  const requestId = ++state.detailUsersRequestId;
   els.topSiteDetailHeading.textContent = `Users on ${domain}`;
   els.topSiteDetailCard.classList.remove('hidden');
   els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
 
   try {
     const users = await fetchUsersOnTopSite(domain);
+    if (requestId !== state.detailUsersRequestId || state.detailDomain !== domain) {
+      return;
+    }
+
     els.topSiteUsersList.innerHTML = users?.length
       ? users.map(renderUserCard).join('')
       : '<div class="empty-state">No active users are visible on this site right now.</div>';
   } catch (error) {
+    if (requestId !== state.detailUsersRequestId || state.detailDomain !== domain) {
+      return;
+    }
+
     els.topSiteUsersList.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
 }
 
-async function renderActiveUsers() {
+async function renderActiveUsers({ refreshVersion = state.refreshVersion } = {}) {
   updatePresenceAvailability();
+  const requestId = ++state.activeUsersRequestId;
 
   if (!state.tabInfo?.domain) {
     els.activeUsersList.innerHTML = '<div class="empty-state">Open a website to view live activity on the current domain.</div>';
@@ -477,13 +515,23 @@ async function renderActiveUsers() {
     return;
   }
 
+  els.activeUsersList.innerHTML = '<div class="empty-state">Refreshing live members…</div>';
+
   try {
     const users = await fetchActiveUsersForDomain(state.tabInfo.domain);
+    if (requestId !== state.activeUsersRequestId || isStaleRefresh(refreshVersion)) {
+      return;
+    }
+
     const others = (users || []).filter((user) => user.id !== state.user?.id);
     els.activeUsersList.innerHTML = others.length
       ? others.map(renderUserCard).join('')
       : '<div class="empty-state">No other active users are visible on this site right now.</div>';
   } catch (error) {
+    if (requestId !== state.activeUsersRequestId || isStaleRefresh(refreshVersion)) {
+      return;
+    }
+
     els.activeUsersList.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
   }
 }
@@ -497,21 +545,49 @@ function switchTab(tabId) {
   });
 }
 
-async function loadTopSites() {
+async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshVersion } = {}) {
+  logStructured('log', '[Connect.Me] Top-sites refresh trigger', { reason, detailDomain: state.detailDomain });
+  const requestId = ++state.topSitesRequestId;
+
   if (!state.user) {
     state.topSites = [];
     renderTopSites();
+    if (state.detailDomain) {
+      state.detailDomain = null;
+      els.topSiteDetailCard.classList.add('hidden');
+    }
     return;
   }
+
   try {
     state.topSites = await fetchTopSites();
   } catch (_error) {
+    if (requestId !== state.topSitesRequestId || isStaleRefresh(refreshVersion)) {
+      return;
+    }
+
     state.topSites = [];
   }
+
+  if (requestId !== state.topSitesRequestId || isStaleRefresh(refreshVersion)) {
+    return;
+  }
+
   renderTopSites();
+
+  if (state.detailDomain) {
+    const exists = state.topSites.some((site) => site.domain === state.detailDomain);
+    if (exists) {
+      await openTopSiteDetail(state.detailDomain);
+    } else {
+      state.detailDomain = null;
+      els.topSiteDetailCard.classList.add('hidden');
+    }
+  }
 }
 
-async function refreshState() {
+async function refreshState({ reason = 'manual' } = {}) {
+  const refreshVersion = bumpRefreshVersion();
   state.tabInfo = await getCurrentTabInfo();
   renderDomainBadge();
 
@@ -540,6 +616,8 @@ async function refreshState() {
   }
 
   logStructured('log', '[Connect.Me] Popup state refreshed', {
+    reason,
+    refreshVersion,
     userId: state.user?.id || null,
     profileComplete: hasCompleteProfile(state.profile),
     hasSavedPrivacySettings: state.hasSavedPrivacySettings,
@@ -553,8 +631,8 @@ async function refreshState() {
   renderPrivacySettingsForm();
   renderPresenceControls();
   renderPrivacyTab();
-  await renderActiveUsers();
-  await loadTopSites();
+  await renderActiveUsers({ refreshVersion });
+  await loadTopSites({ reason, refreshVersion });
 }
 
 function buildProfilePayload() {
@@ -624,8 +702,10 @@ function buildPrivacyPayload(source) {
 async function syncSavedPrivacyState(savedPrivacy, source) {
   state.privacy = savedPrivacy || getDefaultPrivacySettings();
   state.hasSavedPrivacySettings = Boolean(savedPrivacy);
+  const refreshVersion = bumpRefreshVersion();
   logStructured('log', '[Connect.Me] Applying saved privacy state to popup', {
     source,
+    refreshVersion,
     savedPrivacy: state.privacy,
     hasSavedPrivacySettings: state.hasSavedPrivacySettings
   });
@@ -633,8 +713,8 @@ async function syncSavedPrivacyState(savedPrivacy, source) {
   renderConsentForm();
   renderPrivacySettingsForm();
   renderPresenceControls();
-  await renderActiveUsers();
-  await loadTopSites();
+  await renderActiveUsers({ refreshVersion });
+  await loadTopSites({ reason: `${source}-privacy-sync`, refreshVersion });
 }
 
 async function savePrivacy(source) {
@@ -647,13 +727,14 @@ async function savePrivacy(source) {
   try {
     const savedPrivacy = await upsertPrivacySettings(payload);
     logStructured('log', '[Connect.Me] Privacy save succeeded', { source, savedPrivacy, payload });
-    await refreshState();
+    await refreshState({ reason: `${source}-saved` });
     await syncSavedPrivacyState(savedPrivacy, source);
 
     if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
-      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: `${source}-presence-disabled` });
     } else {
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: source === 'consent' ? 'consent-saved' : 'privacy-updated' });
+      chrome.runtime.sendMessage({ type: 'REFRESH_TOP_SITES', reason: source === 'consent' ? 'consent-saved' : 'privacy-updated' });
     }
 
     setInlineValidation('');
@@ -699,9 +780,11 @@ async function togglePresence(enabled) {
     await syncSavedPrivacyState(savedPrivacy, 'presence-toggle');
     if (savedPrivacy.presenceSharingEnabled && !savedPrivacy.invisibleModeEnabled) {
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'presence-enabled' });
+      chrome.runtime.sendMessage({ type: 'REFRESH_TOP_SITES', reason: 'presence-enabled' });
       setStatus('Presence enabled.', 'success');
     } else {
-      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'presence-disabled' });
+      chrome.runtime.sendMessage({ type: 'REFRESH_TOP_SITES', reason: 'presence-disabled' });
       setStatus('Presence disabled.', 'success');
     }
   } catch (error) {
@@ -729,15 +812,66 @@ async function handleProfileSubmit(event) {
     await saveUserMetadataProfileSnapshot(savedProfile);
     state.pendingAvatar = null;
     els.profileImage.value = '';
-    await refreshState();
+    await refreshState({ reason: 'profile-updated' });
     const successMessage = hasCompleteProfile(state.profile)
       ? 'Profile and visibility settings saved successfully.'
       : 'Profile and visibility settings saved successfully. Add a profile photo and any remaining required details to enable presence.';
     setStatus(successMessage, 'success');
     chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'profile-updated' });
+    chrome.runtime.sendMessage({ type: 'REFRESH_TOP_SITES', reason: 'profile-updated' });
   } catch (error) {
     setStatus(error.message, 'error');
   }
+}
+
+function stopTopSitesPolling() {
+  if (state.topSitesPollId) {
+    clearInterval(state.topSitesPollId);
+    state.topSitesPollId = null;
+  }
+}
+
+function startTopSitesPolling() {
+  stopTopSitesPolling();
+  state.topSitesPollId = window.setInterval(() => {
+    loadTopSites({ reason: 'popup-poll', refreshVersion: state.refreshVersion }).catch((error) => {
+      logStructured('warn', '[Connect.Me] Top-sites polling failed', { message: error.message });
+    });
+  }, 30000);
+}
+
+function handleRuntimeMessage(message) {
+  if (message?.type === 'ACTIVE_CONTEXT_CHANGED') {
+    logStructured('log', '[Connect.Me] Popup refresh trigger', message);
+    refreshState({ reason: message.reason || 'background-event' }).catch((error) => {
+      logStructured('error', '[Connect.Me] Popup refresh failed', { reason: message.reason, message: error.message });
+    });
+    return;
+  }
+
+  if (message?.type === 'TOP_SITES_REFRESH_REQUESTED') {
+    logStructured('log', '[Connect.Me] Top-sites refresh trigger', message);
+    loadTopSites({ reason: message.reason || 'background-request', refreshVersion: state.refreshVersion }).catch((error) => {
+      logStructured('error', '[Connect.Me] Top-sites refresh failed', { reason: message.reason, message: error.message });
+    });
+  }
+}
+
+function bindRuntimeListeners() {
+  chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+  window.addEventListener('focus', () => {
+    refreshState({ reason: 'popup-focus' }).catch((error) => {
+      logStructured('error', '[Connect.Me] Popup focus refresh failed', { message: error.message });
+    });
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      refreshState({ reason: 'popup-visible' }).catch((error) => {
+        logStructured('error', '[Connect.Me] Popup visibility refresh failed', { message: error.message });
+      });
+    }
+  });
+  window.addEventListener('beforeunload', stopTopSitesPolling);
 }
 
 function bindElements() {
@@ -767,7 +901,7 @@ async function bindEvents() {
     setStatus('Logging in…');
     try {
       await signIn(els.authEmail.value.trim(), els.authPassword.value);
-      await refreshState();
+      await refreshState({ reason: 'login' });
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'login' });
       setStatus('Logged in successfully', 'success');
     } catch (error) {
@@ -779,7 +913,7 @@ async function bindEvents() {
     setStatus('Creating account…');
     try {
       await signUp(els.authEmail.value.trim(), els.authPassword.value);
-      await refreshState();
+      await refreshState({ reason: 'signup' });
       setStatus('Account created successfully. Check your email if confirmation is enabled.', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
@@ -792,8 +926,8 @@ async function bindEvents() {
       await signOut();
       state.profile = null;
       state.user = null;
-      await refreshState();
-      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      await refreshState({ reason: 'logout' });
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'logout' });
       setStatus('Logged out successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
@@ -906,8 +1040,8 @@ async function bindEvents() {
     try {
       await deleteAccountData();
       await signOut();
-      await refreshState();
-      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      await refreshState({ reason: 'account-deleted' });
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'account-deleted' });
       setStatus('Account data deleted successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
@@ -916,7 +1050,7 @@ async function bindEvents() {
 
   els.refreshTopSites.addEventListener('click', async () => {
     setStatus('Refreshing top sites…');
-    await loadTopSites();
+    await loadTopSites({ reason: 'manual-refresh', refreshVersion: state.refreshVersion });
     setStatus('Top sites refreshed', 'success');
   });
 
@@ -939,7 +1073,9 @@ async function initialize() {
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
   populateSelect(els.consentRetention, getRetentionOptions(), '7|days');
   await bindEvents();
-  await refreshState();
+  bindRuntimeListeners();
+  startTopSitesPolling();
+  await refreshState({ reason: 'popup-opened' });
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
 
