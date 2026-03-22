@@ -14,11 +14,12 @@
           <h1>Connect.Me</h1>
           <p class="subtitle">A privacy-first academic and professional networking extension.</p>
         </div>
-        <div class="header-actions">
+        <div class="header-actions stack-sm">
           <label class="mini-toggle" for="presenceQuickToggle">
             <span>Presence</span>
             <input id="presenceQuickToggle" type="checkbox" />
           </label>
+          <button id="openDesktopButton" type="button" class="secondary small">Full Desktop Version</button>
         </div>
       </header>
 
@@ -207,10 +208,21 @@
           <div class="section-heading">
             <div>
               <h2>Current Site</h2>
-              <p class="muted">See your current domain, your profile, and active members on the same site.</p>
+              <p class="muted">See your current site details, your profile, and active members on the same site.</p>
             </div>
             <span id="currentDomainBadge" class="badge">No website detected</span>
           </div>
+
+          <section class="site-url-card stack-sm">
+            <div class="section-heading compact">
+              <div>
+                <h3>Tracked site detail</h3>
+                <p id="currentSitePrivacyNote" class="muted small-text">Only the domain is visible because detailed tracking is currently off.</p>
+              </div>
+              <button id="copyCurrentUrlButton" type="button" class="secondary small">Copy visible URL</button>
+            </div>
+            <div id="currentSiteUrlSummary" class="url-summary empty-state">Open a supported website to view current site details.</div>
+          </section>
 
           <div class="grid-two">
             <section class="stack-sm">
@@ -244,13 +256,14 @@
             </div>
             <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
           </div>
+          <div class="callout subtle small-text">Top-site rankings are aggregated by domain. When user privacy settings allow more detail, the selected site panel below shows each visible tracked path or full URL.</div>
           <div id="topSitesList" class="list"></div>
         </article>
         <article id="topSiteDetailCard" class="card stack-md hidden">
           <div class="section-heading">
             <div>
               <h2 id="topSiteDetailHeading">Site detail</h2>
-              <p class="muted">Currently active users on the selected website.</p>
+              <p id="topSiteDetailSubheading" class="muted">Currently active users on the selected website.</p>
             </div>
             <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
           </div>

@@ -1,4 +1,5 @@
 import {
+  buildScopedSiteContext,
   deleteAccountData,
   deleteHistory,
   ensureBuiltInConfig,
@@ -71,6 +72,7 @@ const state = {
 };
 
 const els = {};
+const isDesktopWorkspace = document.body.classList.contains('desktop-body');
 
 const SHARED_CARD_DEBUG_ENABLED = true;
 
@@ -103,6 +105,79 @@ function logStructured(level, message, payload) {
 function formatActiveUserLabel(count) {
   const safeCount = Number(count) || 0;
   return `${safeCount} active user${safeCount === 1 ? '' : 's'}`;
+}
+
+
+function formatHistoryModeLabel(mode) {
+  switch (mode) {
+    case 'full_url':
+      return 'Full URL';
+    case 'path':
+      return 'Domain and path';
+    case 'none':
+      return 'No stored history';
+    default:
+      return 'Domain only';
+  }
+}
+
+function getCurrentSiteScope() {
+  return buildScopedSiteContext(state.tabInfo, state.privacy);
+}
+
+function renderCurrentSiteUrlSummary() {
+  const scoped = getCurrentSiteScope();
+  if (!scoped) {
+    els.currentSitePrivacyNote.textContent = 'Open a supported website to view current site details.';
+    els.currentSiteUrlSummary.innerHTML = '<div class="empty-state">Open a supported website to view current site details.</div>';
+    if (els.copyCurrentUrlButton) {
+      els.copyCurrentUrlButton.disabled = true;
+    }
+    return;
+  }
+
+  const rows = [
+    `<div class="url-row"><span class="url-label">Tracking scope</span><code class="url-value">${escapeHtml(formatHistoryModeLabel(state.privacy.historyMode))}</code></div>`,
+    `<div class="url-row"><span class="url-label">Domain</span><code class="url-value">${escapeHtml(scoped.domain)}</code></div>`
+  ];
+
+  if (scoped.canShowPath) {
+    rows.push(`<div class="url-row"><span class="url-label">Domain + path</span><code class="url-value break-anywhere">${escapeHtml(scoped.pathDisplay)}</code></div>`);
+  }
+
+  if (scoped.canShowFullUrl) {
+    rows.push(`<div class="url-row"><span class="url-label">Full URL</span><code class="url-value break-anywhere">${escapeHtml(scoped.fullUrl)}</code></div>`);
+  }
+
+  if (!scoped.canShowPath && !scoped.canShowFullUrl) {
+    rows.push('<div class="callout subtle small-text">For extra URL detail, enable a broader history scope in Settings or Consent.</div>');
+  }
+
+  els.currentSitePrivacyNote.textContent = scoped.privacyDescription;
+  els.currentSiteUrlSummary.innerHTML = rows.join('');
+  if (els.copyCurrentUrlButton) {
+    els.copyCurrentUrlButton.disabled = false;
+    els.copyCurrentUrlButton.dataset.copyValue = scoped.displayUrl;
+  }
+}
+
+function renderTrackedPageDetail(user) {
+  const fullUrl = String(user?.full_url || '').trim();
+  const path = String(user?.path || '').trim();
+  const domain = String(user?.domain || '').trim();
+  if (!domain && !path && !fullUrl) {
+    return '';
+  }
+
+  const rows = [`<div class="url-row compact"><span class="url-label">Domain</span><code class="url-value">${escapeHtml(domain || 'Unavailable')}</code></div>`];
+  if (path) {
+    rows.push(`<div class="url-row compact"><span class="url-label">Domain + path</span><code class="url-value break-anywhere">${escapeHtml(`${domain}${path}`)}</code></div>`);
+  }
+  if (fullUrl) {
+    rows.push(`<div class="url-row compact"><span class="url-label">Full URL</span><code class="url-value break-anywhere">${escapeHtml(fullUrl)}</code></div>`);
+  }
+
+  return `<div class="tracked-page-card"><div class="muted small-text">Visible tracked page detail</div>${rows.join('')}</div>`;
 }
 
 function bumpRefreshVersion() {
@@ -257,8 +332,28 @@ function populateSelect(select, options, selectedValue) {
 async function getCurrentTabInfo() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_CONTEXT' });
-    if (response?.ok && response.context?.url) {
-      return extractTabInfo(response.context.url);
+    if (response?.ok && response.context) {
+      if (response.context.url) {
+        return {
+          ...extractTabInfo(response.context.url),
+          domain: response.context.domain || extractTabInfo(response.context.url)?.domain,
+          path: response.context.path || extractTabInfo(response.context.url)?.path,
+          privacyDescription: response.context.privacyDescription || null,
+          effectiveHistoryMode: response.context.effectiveHistoryMode || null,
+          requestedHistoryMode: response.context.requestedHistoryMode || null
+        };
+      }
+      if (response.context.domain) {
+        return {
+          domain: response.context.domain,
+          path: response.context.path || '/',
+          url: response.context.url || '',
+          title: response.context.title || response.context.domain,
+          privacyDescription: response.context.privacyDescription || null,
+          effectiveHistoryMode: response.context.effectiveHistoryMode || null,
+          requestedHistoryMode: response.context.requestedHistoryMode || null
+        };
+      }
     }
   } catch (_error) {
     // Fall back to querying the active tab directly when the service worker is unavailable.
@@ -418,18 +513,25 @@ function renderTopSites() {
     return;
   }
 
+  const currentScope = getCurrentSiteScope();
   els.topSitesList.innerHTML = state.topSites
-    .map(
-      (site) => `
+    .map((site) => {
+      const matchesCurrentSite = currentScope?.domain && currentScope.domain === site.domain;
+      const currentSiteDetail = matchesCurrentSite
+        ? `<div class="muted small-text break-anywhere">Current visible detail: ${escapeHtml(currentScope.displayUrl)}</div>`
+        : '';
+
+      return `
         <button type="button" class="list-item site-item" data-domain="${escapeHtml(site.domain)}">
           <div>
             <strong>${escapeHtml(site.domain)}</strong>
             <div class="muted">Last active ${new Date(site.last_seen).toLocaleTimeString()}</div>
+            ${currentSiteDetail}
           </div>
           <span class="badge">${formatActiveUserLabel(site.active_user_count)}</span>
         </button>
-      `
-    )
+      `;
+    })
     .join('');
 
   els.topSitesList.querySelectorAll('[data-domain]').forEach((button) => {
@@ -487,6 +589,7 @@ function renderUserCard(user) {
     : '';
   const detailMarkup = [
     sharedMeta ? `<div class="user-meta-list">${sharedMeta}</div>` : '',
+    renderTrackedPageDetail(publicUser),
     sharedFields.bio ? `<p>${escapeHtml(sharedFields.bio)}</p>` : '',
     limitedProfileNote,
     SHARED_CARD_DEBUG_ENABLED
@@ -556,6 +659,9 @@ async function openTopSiteDetail(domain) {
   state.detailDomain = domain;
   const requestId = ++state.detailUsersRequestId;
   els.topSiteDetailHeading.textContent = `Users on ${domain}`;
+  if (els.topSiteDetailSubheading) {
+    els.topSiteDetailSubheading.textContent = 'Currently active users on the selected website. URL detail below reflects each user's privacy scope.';
+  }
   els.topSiteDetailCard.classList.remove('hidden');
   els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
 
@@ -632,8 +738,16 @@ function switchTab(tabId) {
     button.classList.toggle('active', button.dataset.tab === tabId);
   });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
+    if (isDesktopWorkspace) {
+      panel.classList.add('active');
+      return;
+    }
     panel.classList.toggle('active', panel.id === tabId);
   });
+
+  if (isDesktopWorkspace) {
+    document.getElementById(tabId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshVersion } = {}) {
@@ -721,6 +835,7 @@ async function refreshState({ reason = 'manual' } = {}) {
   renderConsentForm();
   renderPrivacySettingsForm();
   renderPresenceControls();
+  renderCurrentSiteUrlSummary();
   renderPrivacyTab();
   await renderActiveUsers({ refreshVersion });
   await loadTopSites({ reason, refreshVersion });
@@ -971,9 +1086,9 @@ function bindElements() {
     'consentHistoryMode', 'consentRetention', 'consentTrackingEnabled', 'consentPresenceEnabled', 'consentInvisibleMode',
     'profilePanel', 'profileForm', 'profilePrompt', 'logoutButton', 'avatarPreview', 'profileImage', 'shareAvatar', 'firstName', 'lastName',
     'shareFirstName', 'shareLastName', 'placeOfWork', 'sharePlaceOfWork', 'education', 'shareEducation', 'currentLocation',
-    'shareCurrentLocation', 'headline', 'bio', 'shareBio', 'presenceQuickToggle', 'currentDomainBadge',
+    'shareCurrentLocation', 'headline', 'bio', 'shareBio', 'presenceQuickToggle', 'openDesktopButton', 'currentDomainBadge', 'currentSiteUrlSummary', 'currentSitePrivacyNote', 'copyCurrentUrlButton',
     'selfProfileSummary', 'presenceSharingInline', 'presenceStateNote', 'activeUsersList', 'refreshTopSites', 'topSitesList',
-    'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteUsersList', 'closeTopSiteDetail', 'configForm', 'supabaseUrl',
+    'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteDetailSubheading', 'topSiteUsersList', 'closeTopSiteDetail', 'configForm', 'supabaseUrl',
     'supabaseAnonKey', 'privacySettingsForm', 'trackingConsent', 'trackingEnabled', 'historyMode', 'retentionSelect',
     'presenceSharingEnabled', 'invisibleModeEnabled', 'privacyValidationMessage', 'deleteHistoryButton', 'deleteAccountButton',
     'privacyPolicyContent'
@@ -985,6 +1100,25 @@ function bindElements() {
 async function bindEvents() {
   document.querySelectorAll('.tab-link').forEach((button) => {
     button.addEventListener('click', () => switchTab(button.dataset.tab));
+  });
+
+  els.openDesktopButton?.addEventListener('click', async () => {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('desktop.html') });
+  });
+
+  els.copyCurrentUrlButton?.addEventListener('click', async () => {
+    const value = els.copyCurrentUrlButton.dataset.copyValue || '';
+    if (!value) {
+      setStatus('No visible URL detail is available to copy yet.', 'error');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus('Visible URL detail copied to the clipboard.', 'success');
+    } catch (error) {
+      setStatus(error.message || 'Unable to copy the visible URL detail.', 'error');
+    }
   });
 
   els.authForm.addEventListener('submit', async (event) => {
@@ -1166,7 +1300,10 @@ async function initialize() {
   await bindEvents();
   bindRuntimeListeners();
   startTopSitesPolling();
-  await refreshState({ reason: 'popup-opened' });
+  if (isDesktopWorkspace) {
+    document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.add('active'));
+  }
+  await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened' });
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
 

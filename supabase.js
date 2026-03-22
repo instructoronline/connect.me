@@ -129,6 +129,78 @@ export function getDefaultPrivacySettings() {
   return { ...DEFAULT_PRIVACY_SETTINGS };
 }
 
+
+function normalizeHistoryMode(mode) {
+  if (mode === 'path' || mode === 'full_url' || mode === 'none') {
+    return mode;
+  }
+  return 'domain';
+}
+
+export function getEffectiveHistoryMode(privacy = getDefaultPrivacySettings()) {
+  const requestedMode = normalizeHistoryMode(privacy?.historyMode);
+  if (!privacy?.consentGranted || !privacy?.trackingEnabled || requestedMode === 'none') {
+    return 'domain';
+  }
+  return requestedMode;
+}
+
+export function buildScopedSiteContext(tabInfo, privacy = getDefaultPrivacySettings()) {
+  if (!tabInfo?.domain) {
+    return null;
+  }
+
+  const requestedMode = normalizeHistoryMode(privacy?.historyMode);
+  const effectiveHistoryMode = getEffectiveHistoryMode(privacy);
+  const domain = tabInfo.domain;
+  const path = tabInfo.path || '/';
+  const fullUrl = tabInfo.url || `https://${domain}${path}`;
+  const pathDisplay = `${domain}${path}`;
+
+  let privacyDescription = 'Only the domain is visible because detailed tracking is currently off.';
+  if (requestedMode === 'path' && effectiveHistoryMode === 'path') {
+    privacyDescription = 'Your privacy settings allow the domain and path to be shown.';
+  } else if (requestedMode === 'full_url' && effectiveHistoryMode === 'full_url') {
+    privacyDescription = 'Your privacy settings allow the full URL to be shown.';
+  } else if (requestedMode === 'none') {
+    privacyDescription = 'History storage is disabled, so only the domain is shown live.';
+  } else if (privacy?.consentGranted && privacy?.trackingEnabled) {
+    privacyDescription = 'Your privacy settings allow the domain only.';
+  }
+
+  return {
+    requestedHistoryMode: requestedMode,
+    effectiveHistoryMode,
+    domain,
+    path,
+    fullUrl,
+    pathDisplay,
+    displayUrl: effectiveHistoryMode === 'full_url' ? fullUrl : effectiveHistoryMode === 'path' ? pathDisplay : domain,
+    canShowPath: effectiveHistoryMode === 'path' || effectiveHistoryMode === 'full_url',
+    canShowFullUrl: effectiveHistoryMode === 'full_url',
+    privacyDescription
+  };
+}
+
+export function sanitizeTabInfoForPrivacy(tabInfo, privacy = getDefaultPrivacySettings()) {
+  const scoped = buildScopedSiteContext(tabInfo, privacy);
+  if (!scoped) {
+    return null;
+  }
+
+  return {
+    domain: scoped.domain,
+    path: scoped.canShowPath ? scoped.path : null,
+    url: scoped.canShowFullUrl ? scoped.fullUrl : null,
+    title: tabInfo?.title || scoped.domain,
+    detectedAt: tabInfo?.detectedAt || null,
+    requestedHistoryMode: scoped.requestedHistoryMode,
+    effectiveHistoryMode: scoped.effectiveHistoryMode,
+    trackedDisplayUrl: scoped.displayUrl,
+    privacyDescription: scoped.privacyDescription
+  };
+}
+
 export function getRetentionOptions() {
   const options = [];
   for (let hour = 1; hour <= 12; hour += 1) {
@@ -1113,7 +1185,10 @@ export async function fetchTopSites() {
   const rows = await restRequest('top_active_sites', {
     query: '?select=domain,active_user_count,last_seen&order=active_user_count.desc,last_seen.desc'
   });
-  return rows || [];
+  return (rows || []).map((row) => ({
+    ...row,
+    trackedDisplayUrl: row.full_url || row.path ? `${row.domain}${row.path || ''}` : row.domain
+  }));
 }
 
 export async function fetchUsersOnTopSite(domain) {

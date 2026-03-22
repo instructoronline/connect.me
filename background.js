@@ -6,6 +6,7 @@ import {
   extractTabInfo,
   getDefaultPrivacySettings,
   getPrivacySettings,
+  sanitizeTabInfoForPrivacy,
   hasCompleteProfile,
   purgeExpiredHistory,
   recordHistory,
@@ -53,12 +54,17 @@ async function broadcastMessage(message) {
   }
 }
 
-async function persistActiveContext(tabInfo, reason) {
+async function persistActiveContext(tabInfo, reason, privacy = getDefaultPrivacySettings()) {
+  const scoped = sanitizeTabInfoForPrivacy(tabInfo, privacy);
   const payload = {
-    domain: tabInfo?.domain || null,
-    path: tabInfo?.path || null,
-    url: tabInfo?.url || null,
-    title: tabInfo?.title || null,
+    domain: scoped?.domain || tabInfo?.domain || null,
+    path: scoped?.path || null,
+    url: scoped?.url || null,
+    title: tabInfo?.title || scoped?.title || null,
+    trackedDisplayUrl: scoped?.trackedDisplayUrl || scoped?.domain || tabInfo?.domain || null,
+    requestedHistoryMode: scoped?.requestedHistoryMode || privacy?.historyMode || 'domain',
+    effectiveHistoryMode: scoped?.effectiveHistoryMode || 'domain',
+    privacyDescription: scoped?.privacyDescription || 'Only the domain is visible because detailed tracking is currently off.',
     detectedAt: new Date().toISOString(),
     reason
   };
@@ -67,8 +73,8 @@ async function persistActiveContext(tabInfo, reason) {
   return payload;
 }
 
-async function notifyPopupRefresh(reason, tabInfo, extras = {}) {
-  const context = await persistActiveContext(tabInfo, reason);
+async function notifyPopupRefresh(reason, tabInfo, extras = {}, privacy = getDefaultPrivacySettings()) {
+  const context = await persistActiveContext(tabInfo, reason, privacy);
   logStructured('log', '[Connect.Me] Popup refresh trigger', { reason, context, extras });
   await broadcastMessage({
     type: 'ACTIVE_CONTEXT_CHANGED',
@@ -96,7 +102,7 @@ async function trackActiveContext(reason = 'heartbeat') {
     const session = await ensureValidSession();
     if (!session?.user) {
       await clearPresence().catch(() => null);
-      await notifyPopupRefresh(reason, null, { topSitesRefresh: true, presenceCleared: true });
+      await notifyPopupRefresh(reason, null, { topSitesRefresh: true, presenceCleared: true }, getDefaultPrivacySettings());
       return;
     }
 
@@ -136,7 +142,7 @@ async function trackActiveContext(reason = 'heartbeat') {
           trackedAt: nowIso
         }
       });
-      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true });
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true }, privacy);
       return;
     }
 
@@ -180,10 +186,11 @@ async function trackActiveContext(reason = 'heartbeat') {
     }
 
     if (shouldSharePresence(privacy, profile)) {
+      const scopedTabInfo = sanitizeTabInfoForPrivacy(tabInfo, privacy);
       const presencePayload = {
         domain: tabInfo.domain,
-        path: tabInfo.path,
-        full_url: tabInfo.url,
+        path: scopedTabInfo?.path || null,
+        full_url: scopedTabInfo?.url || null,
         page_title: tab?.title || tabInfo.title,
         last_seen: nowIso,
         expires_at: new Date(Date.now() + PRESENCE_EXPIRY_MS).toISOString()
@@ -191,10 +198,10 @@ async function trackActiveContext(reason = 'heartbeat') {
 
       logStructured('log', '[Connect.Me] Presence update payload', { reason, presencePayload });
       await upsertPresence(presencePayload).catch(() => null);
-      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceUpdated: true });
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceUpdated: true }, privacy);
     } else {
       await clearPresence().catch(() => null);
-      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true });
+      await notifyPopupRefresh(reason, tabInfo, { topSitesRefresh: true, presenceCleared: true }, privacy);
     }
   } catch (_error) {
     // Avoid breaking the service worker if Supabase is temporarily unavailable.
