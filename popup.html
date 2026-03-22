@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect.Me</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="popup-body">
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Privacy-first site presence</p>
+          <h1>Connect.Me</h1>
+        </div>
+        <button id="presenceQuickToggle" class="toggle-button" type="button">Presence OFF</button>
+      </header>
+
+      <section id="statusBanner" class="status-banner hidden"></section>
+
+      <section id="authPanel" class="card">
+        <h2>Welcome</h2>
+        <p>Sign up or log in to enable privacy-controlled presence and optional history tracking.</p>
+        <form id="authForm" class="stack-md">
+          <label>
+            Email
+            <input id="authEmail" type="email" autocomplete="username" required />
+          </label>
+          <label>
+            Password
+            <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+          </label>
+          <div class="button-row">
+            <button id="loginButton" type="submit">Log In</button>
+            <button id="signupButton" type="button" class="secondary">Sign Up</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="consentPanel" class="card hidden">
+        <h2>Before tracking starts</h2>
+        <p>
+          Connect.Me does not collect any browsing data until you explicitly grant consent. Choose your tracking scope and retention window below.
+        </p>
+        <form id="consentForm" class="stack-md">
+          <label>
+            What history should be stored?
+            <select id="consentHistoryMode"></select>
+          </label>
+          <label>
+            Retention window
+            <select id="consentRetention"></select>
+          </label>
+          <div class="checklist">
+            <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
+            <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
+            <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
+          </div>
+          <button type="submit">I Consent</button>
+        </form>
+      </section>
+
+      <section id="profilePanel" class="card hidden">
+        <div class="section-heading">
+          <h2>Your profile</h2>
+          <button id="logoutButton" type="button" class="secondary small">Log Out</button>
+        </div>
+        <p>Create or update your visible profile. Your profile is only shown when presence sharing is enabled and Invisible Mode is off.</p>
+        <form id="profileForm" class="stack-md">
+          <label>
+            Display name
+            <input id="displayName" type="text" maxlength="80" required />
+          </label>
+          <label>
+            Headline
+            <input id="headline" type="text" maxlength="120" placeholder="Designer · Builder · Marketer" />
+          </label>
+          <label>
+            Bio
+            <textarea id="bio" rows="3" maxlength="280" placeholder="Tell people what you do."></textarea>
+          </label>
+          <button type="submit">Save Profile</button>
+        </form>
+      </section>
+
+      <nav class="tab-bar" aria-label="Popup tabs">
+        <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
+        <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
+        <button class="tab-link" data-tab="settingsTab">Settings</button>
+        <button class="tab-link" data-tab="privacyTab">Privacy</button>
+      </nav>
+
+      <section id="currentSiteTab" class="tab-panel active">
+        <article class="card stack-md">
+          <div class="section-heading">
+            <h2>Current Site</h2>
+            <span id="currentDomainBadge" class="badge">Not on a web page</span>
+          </div>
+          <div id="currentSiteContent" class="stack-md">
+            <div>
+              <h3>You</h3>
+              <div id="selfProfileSummary" class="empty-state">Log in to load your profile.</div>
+            </div>
+            <div>
+              <div class="section-heading">
+                <h3>Active users here</h3>
+                <label class="switch-row">
+                  <span>Presence</span>
+                  <input id="presenceSharingInline" type="checkbox" />
+                </label>
+              </div>
+              <p class="muted">Only shown when presence sharing is enabled and Invisible Mode is off.</p>
+              <div id="activeUsersList" class="list"></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section id="topSitesTab" class="tab-panel">
+        <article class="card stack-md">
+          <div class="section-heading">
+            <h2>Top Sites</h2>
+            <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
+          </div>
+          <div id="topSitesList" class="list"></div>
+        </article>
+        <article id="topSiteDetailCard" class="card stack-md hidden">
+          <div class="section-heading">
+            <h2 id="topSiteDetailHeading">Site detail</h2>
+            <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
+          </div>
+          <div id="topSiteUsersList" class="list"></div>
+        </article>
+      </section>
+
+      <section id="settingsTab" class="tab-panel">
+        <article class="card stack-md">
+          <h2>Settings</h2>
+          <form id="configForm" class="stack-md">
+            <label>
+              Supabase URL
+              <input id="supabaseUrl" type="url" placeholder="https://project.supabase.co" />
+            </label>
+            <label>
+              Supabase anon key
+              <textarea id="supabaseAnonKey" rows="3" placeholder="Paste your anon key"></textarea>
+            </label>
+            <button type="submit">Save Supabase Settings</button>
+          </form>
+        </article>
+
+        <article class="card stack-md">
+          <h2>Privacy controls</h2>
+          <form id="privacySettingsForm" class="stack-md">
+            <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
+            <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable history tracking</label>
+            <label>
+              Tracking scope
+              <select id="historyMode"></select>
+            </label>
+            <label>
+              Retention period
+              <select id="retentionSelect"></select>
+            </label>
+            <label class="checkbox-row"><input id="presenceSharingEnabled" type="checkbox" /> Presence sharing ON/OFF</label>
+            <label class="checkbox-row"><input id="invisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
+            <button type="submit">Save Privacy Settings</button>
+          </form>
+          <div class="button-row">
+            <button id="deleteHistoryButton" type="button" class="danger">Delete Stored History</button>
+            <button id="deleteAccountButton" type="button" class="danger ghost">Delete Account Data</button>
+          </div>
+        </article>
+      </section>
+
+      <section id="privacyTab" class="tab-panel">
+        <article class="card stack-md">
+          <h2>Privacy Policy</h2>
+          <div id="privacyPolicyContent" class="privacy-copy"></div>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

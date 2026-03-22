@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Connect.Me Settings</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="page-body">
+    <main class="page-shell">
+      <header class="page-header">
+        <p class="eyebrow">Connect.Me</p>
+        <h1>Extension Settings</h1>
+        <p class="muted">Configure Supabase, review your privacy choices, and open the popup to test live presence behavior.</p>
+      </header>
+      <section class="card stack-md">
+        <h2>Open the popup for live site controls</h2>
+        <p>The popup is the primary UI for authentication, current-site presence, and Top Sites. These settings are mirrored here for convenience.</p>
+        <button id="openPrivacyPage" type="button">Open Privacy Policy</button>
+      </section>
+      <section class="card stack-md">
+        <h2>Configured Supabase project</h2>
+        <div id="optionsConfigSummary" class="empty-state">Not configured yet.</div>
+      </section>
+      <section class="card stack-md">
+        <h2>Current privacy snapshot</h2>
+        <div id="optionsPrivacySummary" class="empty-state">Log in through the popup to review your live privacy settings.</div>
+      </section>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
