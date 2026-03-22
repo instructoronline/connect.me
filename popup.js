@@ -69,6 +69,27 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function stringifyForLog(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function logStructured(level, message, payload) {
+  const logger = console[level] || console.log;
+  if (payload === undefined) {
+    logger(message);
+    return;
+  }
+  logger(`${message} ${stringifyForLog(payload)}`);
+}
+
 function escapeHtml(value = '') {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -140,7 +161,7 @@ function computePresenceAvailability(privacy = state.privacy, profile = state.pr
 
 function updatePresenceAvailability() {
   state.presenceAvailability = computePresenceAvailability();
-  console.log('[Connect.Me] Presence availability updated', state.presenceAvailability);
+  logStructured('log', '[Connect.Me] Presence availability updated', state.presenceAvailability);
 }
 
 function getRetentionSelectionSnapshot(select) {
@@ -172,7 +193,7 @@ function syncFormState(source, selection, { clearValidation = false } = {}) {
     lastError: parsedRetention ? '' : state.formState[source]?.lastError || ''
   };
 
-  console.log('[Connect.Me] Retention form state synced', {
+  logStructured('log', '[Connect.Me] Retention form state synced', {
     source,
     rawSelection: selection,
     normalizedSelection,
@@ -201,7 +222,7 @@ function populateSelect(select, options, selectedValue) {
   select.innerHTML = '';
   options.forEach((option) => {
     const el = document.createElement('option');
-    const value = option.value ?? `${option.value}|${option.unit}`;
+    const value = option.machineValue ?? option.value ?? '';
     el.value = value;
     el.textContent = option.label;
     el.selected = value === selectedValue;
@@ -482,7 +503,7 @@ async function refreshState() {
     state.hasSavedPrivacySettings = false;
   }
 
-  console.log('[Connect.Me] Popup state refreshed', {
+  logStructured('log', '[Connect.Me] Popup state refreshed', {
     userId: state.user?.id || null,
     profileComplete: hasCompleteProfile(state.profile),
     hasSavedPrivacySettings: state.hasSavedPrivacySettings,
@@ -532,6 +553,7 @@ function buildPrivacyPayload(source) {
   const retentionSelection = source === 'consent'
     ? getRetentionSelectionSnapshot(els.consentRetention)
     : getRetentionSelectionSnapshot(els.retentionSelect);
+  logStructured('log', '[Connect.Me] Retention dropdown raw value', { source, retentionSelection });
   const retention = syncFormState(source, retentionSelection, { clearValidation: true });
   const requestedPresenceSharingEnabled = source === 'consent'
     ? els.consentPresenceEnabled.checked
@@ -559,7 +581,7 @@ function buildPrivacyPayload(source) {
 async function syncSavedPrivacyState(savedPrivacy, source) {
   state.privacy = savedPrivacy || getDefaultPrivacySettings();
   state.hasSavedPrivacySettings = Boolean(savedPrivacy);
-  console.log('[Connect.Me] Applying saved privacy state to popup', {
+  logStructured('log', '[Connect.Me] Applying saved privacy state to popup', {
     source,
     savedPrivacy: state.privacy,
     hasSavedPrivacySettings: state.hasSavedPrivacySettings
@@ -577,11 +599,12 @@ async function savePrivacy(source) {
     ? els.consentPresenceEnabled.checked
     : els.presenceSharingEnabled.checked;
   const payload = buildPrivacyPayload(source);
-  console.log('[Connect.Me] Attempting privacy save from popup', { source, payload });
+  logStructured('log', '[Connect.Me] Privacy settings save payload', { source, payload });
 
   try {
     const savedPrivacy = await upsertPrivacySettings(payload);
-    console.log('[Connect.Me] Privacy save succeeded', { source, savedPrivacy, payload });
+    logStructured('log', '[Connect.Me] Privacy save succeeded', { source, savedPrivacy, payload });
+    await refreshState();
     await syncSavedPrivacyState(savedPrivacy, source);
 
     if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
@@ -597,13 +620,17 @@ async function savePrivacy(source) {
       presenceDeferred: Boolean(requestedPresenceSharingEnabled && !payload.presenceSharingEnabled)
     };
   } catch (error) {
-    console.error('[Connect.Me] Privacy save failed', { source, payload, error });
+    logStructured('error', '[Connect.Me] Privacy save failed', {
+      source,
+      payload,
+      error: { message: error.message }
+    });
     throw error;
   }
 }
 
 async function togglePresence(enabled) {
-  console.log('[Connect.Me] Presence toggle requested', {
+  logStructured('log', '[Connect.Me] Presence toggle requested', {
     requestedEnabled: enabled,
     savedPrivacy: state.privacy,
     availability: state.presenceAvailability
@@ -655,14 +682,11 @@ async function handleProfileSubmit(event) {
       setStatus('Profile picture uploaded successfully', 'success');
     }
 
-    state.profile = await upsertProfile(profilePayload);
-    await saveUserMetadataProfileSnapshot(state.profile);
+    const savedProfile = await upsertProfile(profilePayload);
+    await saveUserMetadataProfileSnapshot(savedProfile);
     state.pendingAvatar = null;
     els.profileImage.value = '';
-    renderProfileForm();
-    renderProfileSummary();
-    renderPresenceControls();
-    await renderActiveUsers();
+    await refreshState();
     const successMessage = hasCompleteProfile(state.profile)
       ? 'Profile updated successfully.'
       : 'Profile updated successfully. Add a profile photo and any remaining required details to enable presence.';
@@ -748,7 +772,7 @@ async function bindEvents() {
       setStatus(message, 'error');
       setInlineValidation(message);
       setFormError('consent', message);
-      console.error('[Connect.Me] Consent save failed', { error });
+      logStructured('error', '[Connect.Me] Consent save failed', { error: { message: error.message } });
     }
   });
 
@@ -798,7 +822,7 @@ async function bindEvents() {
       setStatus(message, 'error');
       setInlineValidation(message);
       setFormError('settings', message);
-      console.error('[Connect.Me] Privacy settings save failed', { error });
+      logStructured('error', '[Connect.Me] Privacy settings save failed', { error: { message: error.message } });
     }
   });
 
