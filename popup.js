@@ -37,6 +37,11 @@ const HISTORY_MODE_OPTIONS = [
   { value: 'full_url', label: 'Full URL' }
 ];
 
+const UI_TEXT = {
+  topSiteDetailSubheading: "Currently active users on the selected website. URL detail below reflects each user's privacy scope.",
+  desktopLaunchError: 'Unable to open the full desktop version right now.'
+};
+
 function createFormState(retentionSelection = '') {
   const normalizedSelection = retentionSelection ? normalizeRetentionSelection(retentionSelection) : null;
   return {
@@ -206,6 +211,32 @@ function setStatus(message, type = 'info') {
   }
   els.statusBanner.textContent = message;
   els.statusBanner.className = `status-banner ${type}`;
+}
+
+async function openDesktopWorkspace() {
+  const desktopUrl = chrome.runtime.getURL('desktop.html');
+
+  try {
+    if (chrome.tabs?.create) {
+      await chrome.tabs.create({ url: desktopUrl });
+      return true;
+    }
+
+    const popupWindow = window.open(desktopUrl, '_blank', 'noopener');
+    if (popupWindow) {
+      return true;
+    }
+
+    window.location.href = desktopUrl;
+    return true;
+  } catch (error) {
+    logStructured('error', '[Connect.Me] Desktop workspace launch failed', {
+      message: error?.message || String(error),
+      desktopUrl
+    });
+    setStatus(error?.message || UI_TEXT.desktopLaunchError, 'error');
+    return false;
+  }
 }
 
 function setInlineValidation(message = '') {
@@ -660,7 +691,7 @@ async function openTopSiteDetail(domain) {
   const requestId = ++state.detailUsersRequestId;
   els.topSiteDetailHeading.textContent = `Users on ${domain}`;
   if (els.topSiteDetailSubheading) {
-    els.topSiteDetailSubheading.textContent = 'Currently active users on the selected website. URL detail below reflects each user's privacy scope.';
+    els.topSiteDetailSubheading.textContent = UI_TEXT.topSiteDetailSubheading;
   }
   els.topSiteDetailCard.classList.remove('hidden');
   els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
@@ -1103,7 +1134,7 @@ async function bindEvents() {
   });
 
   els.openDesktopButton?.addEventListener('click', async () => {
-    await chrome.tabs.create({ url: chrome.runtime.getURL('desktop.html') });
+    await openDesktopWorkspace();
   });
 
   els.copyCurrentUrlButton?.addEventListener('click', async () => {
