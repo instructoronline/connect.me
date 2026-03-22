@@ -11,7 +11,7 @@ Connect.Me is a production-ready Chrome Extension built with Manifest V3 and Sup
 - **Invisible Mode** lets people use the extension while remaining hidden from other users.
 - **Profiles must be completed before presence/community features are enabled.**
 - **Connect.Me will NOT share user data with ANY third parties.**
-- **Permissions are minimized** to `storage`, `tabs`, `alarms`, and optional host permission for the configured Supabase origin.
+- **Permissions are minimized** to `storage`, `tabs`, `alarms`, and the built-in Supabase host permission required for this preconfigured build.
 
 ## Feature overview
 
@@ -66,7 +66,8 @@ The popup’s **Top Sites** tab shows:
 
 ### Settings tab
 The popup’s **Settings** tab lets the user:
-- Paste Supabase URL and anon key
+- Review the built-in Supabase URL and anon key in read-only fields
+- Reload the built-in configuration if needed
 - Grant explicit consent for tracking
 - Enable or disable tracking
 - Select exactly what history is stored
@@ -113,7 +114,7 @@ Examples:
 
 ## Files
 
-- `manifest.json` – Manifest V3 definition with minimal permissions and no required icon binaries.
+- `manifest.json` – Manifest V3 definition with minimal permissions, the built-in Supabase host permission, and no required icon binaries.
 - `background.js` – Service worker for consent-gated tracking, presence heartbeat updates, and periodic purge requests.
 - `popup.html` / `popup.js` – Main popup UI with Current Site, Top Sites, Settings, and Privacy tabs.
 - `options.html` / `options.js` – Full-page settings overview and quick links.
@@ -124,13 +125,15 @@ Examples:
 
 ## Supabase setup
 
-1. Create a Supabase project.
-2. Open the SQL Editor and run `docs/supabase-schema.sql`.
-3. Confirm Email auth is enabled in Supabase Authentication.
-4. Confirm or create the public Storage bucket named `avatars` if your project policies require manual setup.
-5. Copy the project URL and anon key from **Project Settings → API**.
-6. Load this extension locally and paste the Supabase URL and anon key in the popup Settings tab.
-7. When prompted, grant optional host permission for your exact Supabase origin.
+This build is preconfigured to use the Supabase project at `https://dhmtljnjygcqzjrhhscu.supabase.co` with the bundled anon/public key.
+
+1. Open the SQL Editor for that Supabase project and run `docs/supabase-schema.sql`.
+2. Confirm Email auth is enabled in Supabase Authentication.
+3. Confirm or create the public Storage bucket named `avatars` if your project policies require manual setup.
+4. Load this extension locally. The popup Settings tab will automatically show the built-in Supabase URL and anon key as read-only values.
+5. Sign in and use the extension normally—no manual Supabase configuration step is required for this build.
+
+> Important: this extension uses only the anon/public key that is bundled in the codebase for client-side access. Do not add a `service_role` key to the extension.
 
 ## Loading locally in Chrome
 
@@ -139,7 +142,7 @@ Examples:
 3. Click **Load unpacked**.
 4. Select this repository folder.
 5. Pin **Connect.Me** to the toolbar.
-6. Open the popup and save your Supabase settings.
+6. Open the popup and confirm the built-in Supabase configuration is loaded automatically.
 
 ## Manual testing guide
 
@@ -176,8 +179,14 @@ Examples:
 1. Open the Settings tab.
 2. Change one or more privacy controls.
 3. Save.
-4. Confirm the popup shows `Settings saved successfully`.
+4. Confirm the popup shows `Built-in Supabase configuration loaded successfully`.
 5. Try an invalid retention selection in development tools, and confirm the popup shows a validation error instead of saving.
+
+### 5a. Built-in configuration
+1. Open the Settings tab.
+2. Confirm the Supabase URL and anon key are already populated.
+3. Confirm both fields are read-only.
+4. Click **Reload built-in configuration** and confirm the popup shows `Built-in Supabase configuration loaded successfully`.
 
 ### 6. Current site tracking
 1. Enable consent and optional history tracking.

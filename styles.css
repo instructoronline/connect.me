@@ -312,6 +312,12 @@ textarea:disabled {
   border-color: #bfd2ff;
 }
 
+.callout.success {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: #b7e7ca;
+}
+
 .callout.subtle {
   background: #f7f9fc;
 }

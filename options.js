@@ -3,7 +3,7 @@ import {
   getPrivacySettings,
   getProfile,
   hasCompleteProfile,
-  readConfig
+  ensureBuiltInConfig
 } from './supabase.js';
 
 function $(id) {
@@ -23,9 +23,9 @@ function setStatus(message, type = 'info') {
 
 function renderConfig(config) {
   $('configSummary').innerHTML = `
-    <div class="summary-item"><strong>URL:</strong> ${config.url || 'Not configured'}</div>
-    <div class="summary-item"><strong>Anon key:</strong> ${config.anonKey ? 'Saved locally in extension storage' : 'Not configured'}</div>
-    <p class="muted">You can edit these values in the popup Settings tab.</p>
+    <div class="summary-item"><strong>URL:</strong> ${config.url}</div>
+    <div class="summary-item"><strong>Anon key:</strong> Built in and preloaded for this extension build</div>
+    <p class="muted">The popup Settings tab shows these values as read-only because this build is already configured for Supabase.</p>
   `;
 }
 
@@ -77,8 +77,9 @@ async function initialize() {
   bindOptionEvents();
 
   try {
-    const [config, user] = await Promise.all([readConfig(), getCurrentUser().catch(() => null)]);
+    const [config, user] = await Promise.all([ensureBuiltInConfig(), getCurrentUser().catch(() => null)]);
     renderConfig(config);
+    setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 
     if (!user) {
       renderPrivacy({

@@ -1,6 +1,7 @@
 import {
   buildExpiryIso,
   clearPresence,
+  ensureBuiltInConfig,
   ensureValidSession,
   extractTabInfo,
   getDefaultPrivacySettings,
@@ -105,7 +106,7 @@ async function trackActiveContext(reason = 'heartbeat') {
       await clearPresence().catch(() => null);
     }
   } catch (_error) {
-    // Avoid breaking the service worker when Supabase is not configured yet.
+    // Avoid breaking the service worker if Supabase is temporarily unavailable.
   }
 }
 
@@ -115,6 +116,7 @@ function scheduleAlarms() {
 }
 
 async function initialize() {
+  await ensureBuiltInConfig();
   scheduleAlarms();
   await purgeExpiredHistory().catch(() => null);
   await trackActiveContext('startup');

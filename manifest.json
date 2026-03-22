@@ -18,9 +18,8 @@
     "tabs",
     "alarms"
   ],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://localhost/*"
+  "host_permissions": [
+    "https://dhmtljnjygcqzjrhhscu.supabase.co/*"
   ],
   "web_accessible_resources": [
     {

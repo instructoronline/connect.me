@@ -198,13 +198,16 @@
           <form id="configForm" class="stack-md">
             <label>
               Supabase URL
-              <input id="supabaseUrl" type="url" placeholder="https://project-ref.supabase.co" />
+              <input id="supabaseUrl" type="url" readonly aria-readonly="true" />
             </label>
             <label>
               Supabase anon key
-              <textarea id="supabaseAnonKey" rows="4" placeholder="Paste your anon key"></textarea>
+              <textarea id="supabaseAnonKey" rows="4" readonly aria-readonly="true"></textarea>
             </label>
-            <button type="submit">Save Supabase settings</button>
+            <div class="callout success">
+              This build ships with a built-in Supabase project configuration. The values above are preloaded automatically and locked for end users.
+            </div>
+            <button type="submit" class="secondary">Reload built-in configuration</button>
           </form>
         </article>
 
