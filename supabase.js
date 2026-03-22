@@ -564,6 +564,18 @@ export function hasCompleteProfile(profile) {
   );
 }
 
+export function buildDisplayName(profile = {}) {
+  const firstName = String(profile.first_name || '').trim();
+  const lastName = String(profile.last_name || '').trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  if (fullName) {
+    return fullName;
+  }
+
+  return firstName || lastName || 'Connect.Me User';
+}
+
 export async function saveUserMetadataProfileSnapshot(profile) {
   const session = await ensureValidSession();
   if (!session?.access_token || !profile) {
@@ -571,6 +583,7 @@ export async function saveUserMetadataProfileSnapshot(profile) {
   }
 
   const safeProfile = {
+    display_name: buildDisplayName(profile),
     first_name: profile.first_name,
     last_name: profile.last_name,
     avatar_url: profile.avatar_url,
@@ -598,7 +611,7 @@ export async function saveUserMetadataProfileSnapshot(profile) {
 
 export async function getProfile() {
   const rows = await restRequest('profiles', {
-    query: '?select=id,email,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,created_at,updated_at&limit=1'
+    query: '?select=id,email,display_name,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,created_at,updated_at&limit=1'
   });
   return rows?.[0] || null;
 }
@@ -612,6 +625,7 @@ export async function upsertProfile(profile) {
   const payload = {
     id: user.id,
     email: user.email,
+    display_name: buildDisplayName(profile),
     first_name: profile.first_name,
     last_name: profile.last_name,
     place_of_work: profile.place_of_work,

@@ -548,6 +548,9 @@ function buildPrivacyPayload(source) {
     ? getRetentionSelectionSnapshot(els.consentRetention)
     : getRetentionSelectionSnapshot(els.retentionSelect);
   const retention = syncFormState(source, retentionSelection, { clearValidation: true });
+  const requestedPresenceSharingEnabled = source === 'consent'
+    ? els.consentPresenceEnabled.checked
+    : els.presenceSharingEnabled.checked;
 
   if (!retention) {
     const message = `Unable to parse the selected retention window (${formatRetentionSelectionForMessage(retentionSelection)}). Please choose one of the supported values, such as 1 hour, 2 hours, 12 hours, 1 day, 30 days, 1 month, or 30 months.`;
@@ -563,7 +566,7 @@ function buildPrivacyPayload(source) {
     historyMode: source === 'consent' ? els.consentHistoryMode.value : els.historyMode.value,
     retentionUnit: retention.retentionUnit,
     retentionValue: retention.retentionValue,
-    presenceSharingEnabled: source === 'consent' ? els.consentPresenceEnabled.checked : els.presenceSharingEnabled.checked,
+    presenceSharingEnabled: requestedPresenceSharingEnabled && hasCompleteProfile(state.profile),
     invisibleModeEnabled: source === 'consent' ? els.consentInvisibleMode.checked : els.invisibleModeEnabled.checked
   };
 }
@@ -585,6 +588,9 @@ async function syncSavedPrivacyState(savedPrivacy, source) {
 }
 
 async function savePrivacy(source) {
+  const requestedPresenceSharingEnabled = source === 'consent'
+    ? els.consentPresenceEnabled.checked
+    : els.presenceSharingEnabled.checked;
   const payload = buildPrivacyPayload(source);
   console.log('[Connect.Me] Attempting privacy save from popup', { source, payload });
 
@@ -601,7 +607,10 @@ async function savePrivacy(source) {
 
     setInlineValidation('');
 
-    return savedPrivacy;
+    return {
+      savedPrivacy,
+      presenceDeferred: Boolean(requestedPresenceSharingEnabled && !payload.presenceSharingEnabled)
+    };
   } catch (error) {
     console.error('[Connect.Me] Privacy save failed', { source, payload, error });
     throw error;
@@ -669,7 +678,10 @@ async function handleProfileSubmit(event) {
     renderProfileSummary();
     renderPresenceControls();
     await renderActiveUsers();
-    setStatus('Profile updated successfully', 'success');
+    const successMessage = hasCompleteProfile(state.profile)
+      ? 'Profile updated successfully.'
+      : 'Profile updated successfully. Add a profile photo and any remaining required details to enable presence.';
+    setStatus(successMessage, 'success');
     chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'profile-updated' });
   } catch (error) {
     setStatus(error.message, 'error');
@@ -739,8 +751,13 @@ async function bindEvents() {
     event.preventDefault();
     setStatus('Saving consent preferences…');
     try {
-      await savePrivacy('consent');
-      setStatus('Consent preferences saved successfully and synced from Supabase.', 'success');
+      const { presenceDeferred } = await savePrivacy('consent');
+      setStatus(
+        presenceDeferred
+          ? 'Consent preferences saved successfully. Presence remains off until your full profile is complete.'
+          : 'Consent preferences saved successfully and synced from Supabase.',
+        'success'
+      );
     } catch (error) {
       const message = error.message || 'Unable to save consent preferences.';
       setStatus(message, 'error');
@@ -792,8 +809,13 @@ async function bindEvents() {
     event.preventDefault();
     setStatus('Saving privacy settings…');
     try {
-      await savePrivacy('settings');
-      setStatus('Privacy settings saved successfully and synced from Supabase.', 'success');
+      const { presenceDeferred } = await savePrivacy('settings');
+      setStatus(
+        presenceDeferred
+          ? 'Privacy settings saved successfully. Presence remains off until your full profile is complete.'
+          : 'Privacy settings saved successfully and synced from Supabase.',
+        'success'
+      );
     } catch (error) {
       const message = error.message || 'Unable to save consent preferences.';
       setStatus(message, 'error');
