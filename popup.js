@@ -11,8 +11,10 @@ import {
   getDefaultPrivacySettings,
   getPrivacySettingsRecord,
   getProfile,
+  getPublicProfile,
   getRetentionOptions,
   hasCompleteProfile,
+  normalizeProfileVisibility,
   normalizeRetentionSelection,
   parseRetentionSelection,
   readConfig,
@@ -241,9 +243,20 @@ function getInitials(profile) {
   return `${first}${last}`.toUpperCase();
 }
 
+function parseVisibilityValue(value) {
+  return String(value) === 'true';
+}
+
+function getDisplayName(profile, { fallback = 'Connect.Me member' } = {}) {
+  const firstName = String(profile?.first_name || '').trim();
+  const lastName = String(profile?.last_name || '').trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+  return fullName || firstName || lastName || fallback;
+}
+
 function renderAvatar(profile, size = 'medium') {
   if (profile?.avatar_url) {
-    return `<img class="avatar avatar-${size}" src="${escapeHtml(profile.avatar_url)}" alt="${escapeHtml(profile.first_name || 'User')} avatar" />`;
+    return `<img class="avatar avatar-${size}" src="${escapeHtml(profile.avatar_url)}" alt="${escapeHtml(getDisplayName(profile, { fallback: 'User' }))} avatar" />`;
   }
   return `<div class="avatar avatar-${size}">${escapeHtml(getInitials(profile))}</div>`;
 }
@@ -266,6 +279,7 @@ function renderAuthState() {
 }
 
 function renderProfileForm() {
+  const visibility = normalizeProfileVisibility(state.profile || {});
   els.firstName.value = state.profile?.first_name || '';
   els.lastName.value = state.profile?.last_name || '';
   els.placeOfWork.value = state.profile?.place_of_work || '';
@@ -273,6 +287,13 @@ function renderProfileForm() {
   els.currentLocation.value = state.profile?.current_location || '';
   els.headline.value = state.profile?.headline || '';
   els.bio.value = state.profile?.bio || '';
+  els.shareAvatar.value = String(visibility.share_avatar);
+  els.shareFirstName.value = String(visibility.share_first_name);
+  els.shareLastName.value = String(visibility.share_last_name);
+  els.sharePlaceOfWork.value = String(visibility.share_place_of_work);
+  els.shareEducation.value = String(visibility.share_education);
+  els.shareCurrentLocation.value = String(visibility.share_current_location);
+  els.shareBio.value = String(visibility.share_bio);
   els.avatarPreview.innerHTML = renderAvatar(state.profile, 'large');
   renderProfilePrompt();
 }
@@ -303,6 +324,15 @@ function renderProfileSummary() {
         <span><strong>Location:</strong> ${escapeHtml(state.profile.current_location)}</span>
       </div>
       <p>${escapeHtml(state.profile.bio || 'No bio added yet.')}</p>
+      <div class="visibility-list muted small-text">
+        <span>Public avatar: ${state.profile?.share_avatar ? 'Share' : 'Not share'}</span>
+        <span>Public first name: ${state.profile?.share_first_name ? 'Share' : 'Not share'}</span>
+        <span>Public last name: ${state.profile?.share_last_name ? 'Share' : 'Not share'}</span>
+        <span>Public work: ${state.profile?.share_place_of_work ? 'Share' : 'Not share'}</span>
+        <span>Public education: ${state.profile?.share_education ? 'Share' : 'Not share'}</span>
+        <span>Public location: ${state.profile?.share_current_location ? 'Share' : 'Not share'}</span>
+        <span>Public bio: ${state.profile?.share_bio ? 'Share' : 'Not share'}</span>
+      </div>
       <span class="pill ${complete ? 'success' : 'warning'}">${complete ? 'Profile complete' : 'Profile incomplete'}</span>
     </div>
   `;
@@ -377,22 +407,28 @@ function renderTopSites() {
 }
 
 function renderUserCard(user) {
+  const publicUser = getPublicProfile(user);
+  const sharedMeta = [
+    publicUser.place_of_work ? `<span class="meta-pill">Work: ${escapeHtml(publicUser.place_of_work)}</span>` : '',
+    publicUser.education ? `<span class="meta-pill">Education: ${escapeHtml(publicUser.education)}</span>` : '',
+    publicUser.current_location ? `<span class="meta-pill">Location: ${escapeHtml(publicUser.current_location)}</span>` : ''
+  ].filter(Boolean).join('');
+  const bioMarkup = publicUser.bio
+    ? `<p>${escapeHtml(publicUser.bio)}</p>`
+    : '<p class="muted hidden-field-note">This user is sharing a limited public profile.</p>';
+
   return `
     <div class="user-card">
       <div class="user-row">
-        ${renderAvatar(user, 'small')}
+        ${renderAvatar(publicUser, 'small')}
         <div>
-          <strong>${escapeHtml(user.first_name || '')} ${escapeHtml(user.last_name || '')}</strong>
-          <div class="muted">${escapeHtml(user.headline || user.place_of_work || 'Connect.Me member')}</div>
+          <strong>${escapeHtml(getDisplayName(publicUser))}</strong>
+          <div class="muted">${escapeHtml(publicUser.headline || publicUser.place_of_work || 'Connect.Me member')}</div>
         </div>
       </div>
-      <div class="detail-grid compact-grid">
-        <span><strong>Work:</strong> ${escapeHtml(user.place_of_work || 'Not shared')}</span>
-        <span><strong>Education:</strong> ${escapeHtml(user.education || 'Not shared')}</span>
-        <span><strong>Location:</strong> ${escapeHtml(user.current_location || 'Not shared')}</span>
-      </div>
-      <p>${escapeHtml(user.bio || 'No bio provided.')}</p>
-      <small class="muted">Last seen ${new Date(user.last_seen).toLocaleTimeString()}</small>
+      ${sharedMeta ? `<div class="user-meta-list">${sharedMeta}</div>` : ''}
+      ${bioMarkup}
+      <small class="muted">Last seen ${new Date(publicUser.last_seen).toLocaleTimeString()}</small>
     </div>
   `;
 }
@@ -531,7 +567,14 @@ function buildProfilePayload() {
     headline: els.headline.value.trim(),
     bio: els.bio.value.trim(),
     avatar_url: state.profile?.avatar_url || '',
-    avatar_path: state.profile?.avatar_path || ''
+    avatar_path: state.profile?.avatar_path || '',
+    share_avatar: parseVisibilityValue(els.shareAvatar.value),
+    share_first_name: parseVisibilityValue(els.shareFirstName.value),
+    share_last_name: parseVisibilityValue(els.shareLastName.value),
+    share_place_of_work: parseVisibilityValue(els.sharePlaceOfWork.value),
+    share_education: parseVisibilityValue(els.shareEducation.value),
+    share_current_location: parseVisibilityValue(els.shareCurrentLocation.value),
+    share_bio: parseVisibilityValue(els.shareBio.value)
   };
 }
 
@@ -688,8 +731,8 @@ async function handleProfileSubmit(event) {
     els.profileImage.value = '';
     await refreshState();
     const successMessage = hasCompleteProfile(state.profile)
-      ? 'Profile updated successfully.'
-      : 'Profile updated successfully. Add a profile photo and any remaining required details to enable presence.';
+      ? 'Profile and visibility settings saved successfully.'
+      : 'Profile and visibility settings saved successfully. Add a profile photo and any remaining required details to enable presence.';
     setStatus(successMessage, 'success');
     chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'profile-updated' });
   } catch (error) {
@@ -701,8 +744,9 @@ function bindElements() {
   [
     'statusBanner', 'authPanel', 'authForm', 'authEmail', 'authPassword', 'signupButton', 'consentPanel', 'consentForm',
     'consentHistoryMode', 'consentRetention', 'consentTrackingEnabled', 'consentPresenceEnabled', 'consentInvisibleMode',
-    'profilePanel', 'profileForm', 'profilePrompt', 'logoutButton', 'avatarPreview', 'profileImage', 'firstName', 'lastName',
-    'placeOfWork', 'education', 'currentLocation', 'headline', 'bio', 'presenceQuickToggle', 'currentDomainBadge',
+    'profilePanel', 'profileForm', 'profilePrompt', 'logoutButton', 'avatarPreview', 'profileImage', 'shareAvatar', 'firstName', 'lastName',
+    'shareFirstName', 'shareLastName', 'placeOfWork', 'sharePlaceOfWork', 'education', 'shareEducation', 'currentLocation',
+    'shareCurrentLocation', 'headline', 'bio', 'shareBio', 'presenceQuickToggle', 'currentDomainBadge',
     'selfProfileSummary', 'presenceSharingInline', 'presenceStateNote', 'activeUsersList', 'refreshTopSites', 'topSitesList',
     'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteUsersList', 'closeTopSiteDetail', 'configForm', 'supabaseUrl',
     'supabaseAnonKey', 'privacySettingsForm', 'trackingConsent', 'trackingEnabled', 'historyMode', 'retentionSelect',

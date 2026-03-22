@@ -16,9 +16,24 @@ create table if not exists public.profiles (
   bio text not null default '' check (char_length(bio) <= 280),
   avatar_path text not null default '',
   avatar_url text not null default '',
+  share_avatar boolean not null default true,
+  share_first_name boolean not null default true,
+  share_last_name boolean not null default true,
+  share_place_of_work boolean not null default true,
+  share_education boolean not null default true,
+  share_current_location boolean not null default true,
+  share_bio boolean not null default true,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.profiles add column if not exists share_avatar boolean not null default true;
+alter table public.profiles add column if not exists share_first_name boolean not null default true;
+alter table public.profiles add column if not exists share_last_name boolean not null default true;
+alter table public.profiles add column if not exists share_place_of_work boolean not null default true;
+alter table public.profiles add column if not exists share_education boolean not null default true;
+alter table public.profiles add column if not exists share_current_location boolean not null default true;
+alter table public.profiles add column if not exists share_bio boolean not null default true;
 
 create table if not exists public.user_privacy_settings (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -161,6 +176,13 @@ returns table (
   headline text,
   bio text,
   avatar_url text,
+  share_avatar boolean,
+  share_first_name boolean,
+  share_last_name boolean,
+  share_place_of_work boolean,
+  share_education boolean,
+  share_current_location boolean,
+  share_bio boolean,
   last_seen timestamptz
 )
 language sql
@@ -168,14 +190,21 @@ security definer
 set search_path = public
 as $$
   select p.id,
-         p.first_name,
-         p.last_name,
-         p.place_of_work,
-         p.education,
-         p.current_location,
+         case when p.share_first_name then p.first_name else '' end as first_name,
+         case when p.share_last_name then p.last_name else '' end as last_name,
+         case when p.share_place_of_work then p.place_of_work else '' end as place_of_work,
+         case when p.share_education then p.education else '' end as education,
+         case when p.share_current_location then p.current_location else '' end as current_location,
          p.headline,
-         p.bio,
-         p.avatar_url,
+         case when p.share_bio then p.bio else '' end as bio,
+         case when p.share_avatar then p.avatar_url else '' end as avatar_url,
+         p.share_avatar,
+         p.share_first_name,
+         p.share_last_name,
+         p.share_place_of_work,
+         p.share_education,
+         p.share_current_location,
+         p.share_bio,
          ap.last_seen
   from public.active_presence ap
   join public.profiles p on p.id = ap.user_id
