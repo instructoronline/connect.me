@@ -8,7 +8,7 @@ import {
   getCachedUser,
   getCurrentUser,
   getDefaultPrivacySettings,
-  getPrivacySettings,
+  getPrivacySettingsRecord,
   getProfile,
   getRetentionOptions,
   hasCompleteProfile,
@@ -47,6 +47,7 @@ const state = {
   user: null,
   profile: null,
   privacy: getDefaultPrivacySettings(),
+  hasSavedPrivacySettings: false,
   formState: {
     consent: createFormState(),
     settings: createFormState()
@@ -255,7 +256,7 @@ function renderAuthState() {
   const loggedIn = Boolean(state.user);
   els.authPanel.classList.toggle('hidden', loggedIn);
   els.profilePanel.classList.toggle('hidden', !loggedIn);
-  els.consentPanel.classList.toggle('hidden', !loggedIn || state.privacy.consentGranted);
+  els.consentPanel.classList.toggle('hidden', !loggedIn || state.hasSavedPrivacySettings);
 }
 
 function renderProfileForm() {
@@ -482,19 +483,24 @@ async function refreshState() {
   if (state.user) {
     try {
       state.profile = await getProfile();
-      state.privacy = await getPrivacySettings();
+      const privacyRecord = await getPrivacySettingsRecord();
+      state.privacy = privacyRecord.normalized;
+      state.hasSavedPrivacySettings = privacyRecord.rowExists;
     } catch (_error) {
       state.profile = null;
       state.privacy = getDefaultPrivacySettings();
+      state.hasSavedPrivacySettings = false;
     }
   } else {
     state.profile = null;
     state.privacy = getDefaultPrivacySettings();
+    state.hasSavedPrivacySettings = false;
   }
 
   console.log('[Connect.Me] Popup state refreshed', {
     userId: state.user?.id || null,
     profileComplete: hasCompleteProfile(state.profile),
+    hasSavedPrivacySettings: state.hasSavedPrivacySettings,
     privacy: state.privacy
   });
 
@@ -564,7 +570,12 @@ function buildPrivacyPayload(source) {
 
 async function syncSavedPrivacyState(savedPrivacy, source) {
   state.privacy = savedPrivacy || getDefaultPrivacySettings();
-  console.log('[Connect.Me] Applying saved privacy state to popup', { source, savedPrivacy: state.privacy });
+  state.hasSavedPrivacySettings = Boolean(savedPrivacy);
+  console.log('[Connect.Me] Applying saved privacy state to popup', {
+    source,
+    savedPrivacy: state.privacy,
+    hasSavedPrivacySettings: state.hasSavedPrivacySettings
+  });
   renderAuthState();
   renderConsentForm();
   renderPrivacySettingsForm();
@@ -729,7 +740,7 @@ async function bindEvents() {
     setStatus('Saving consent preferences…');
     try {
       await savePrivacy('consent');
-      setStatus('Consent preferences saved successfully.', 'success');
+      setStatus('Consent preferences saved successfully and synced from Supabase.', 'success');
     } catch (error) {
       const message = error.message || 'Unable to save consent preferences.';
       setStatus(message, 'error');
@@ -782,7 +793,7 @@ async function bindEvents() {
     setStatus('Saving privacy settings…');
     try {
       await savePrivacy('settings');
-      setStatus('Consent preferences saved successfully.', 'success');
+      setStatus('Privacy settings saved successfully and synced from Supabase.', 'success');
     } catch (error) {
       const message = error.message || 'Unable to save consent preferences.';
       setStatus(message, 'error');

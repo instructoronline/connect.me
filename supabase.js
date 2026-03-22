@@ -539,7 +539,7 @@ export async function getCachedUser() {
   return user || null;
 }
 
-async function restRequest(resource, { method = 'GET', query = '', body = null, rpc = false } = {}) {
+async function restRequest(resource, { method = 'GET', query = '', body = null, rpc = false, headers = {} } = {}) {
   const session = await ensureValidSession();
   if (!session?.access_token) {
     throw new Error('Please sign in first.');
@@ -548,6 +548,7 @@ async function restRequest(resource, { method = 'GET', query = '', body = null, 
   return supabaseFetch(`${rpc ? '/rest/v1/rpc/' : '/rest/v1/'}${resource}${query}`, {
     method,
     accessToken: session.access_token,
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
 }
@@ -684,12 +685,33 @@ function normalizePrivacySettingsRow(row) {
   };
 }
 
+export async function getPrivacySettingsRecord() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Please sign in first.');
+  }
+
+  const query = `?select=user_id,consent_granted,tracking_enabled,history_mode,retention_unit,retention_value,presence_sharing_enabled,invisible_mode_enabled&user_id=eq.${encodeURIComponent(user.id)}&limit=1`;
+  const rows = await restRequest('user_privacy_settings', { query });
+  const row = rows?.[0] || null;
+  const normalized = normalizePrivacySettingsRow(row);
+
+  console.log('[Connect.Me] fetched settings row', stringifyLogValue({
+    userId: user.id,
+    row,
+    normalized,
+    rowExists: Boolean(row)
+  }));
+
+  return {
+    row,
+    normalized,
+    rowExists: Boolean(row)
+  };
+}
+
 export async function getPrivacySettings() {
-  const rows = await restRequest('user_privacy_settings', {
-    query: '?select=consent_granted,tracking_enabled,history_mode,retention_unit,retention_value,presence_sharing_enabled,invisible_mode_enabled&limit=1'
-  });
-  const normalized = normalizePrivacySettingsRow(rows?.[0]);
-  console.log('[Connect.Me] Loaded privacy settings from Supabase:', stringifyLogValue({ rows, normalized }));
+  const { normalized } = await getPrivacySettingsRecord();
   return normalized;
 }
 
@@ -714,17 +736,21 @@ export async function upsertPrivacySettings(privacy) {
     invisible_mode_enabled: Boolean(privacy.invisibleModeEnabled)
   };
 
-  console.log('[Connect.Me] Saving consent/privacy payload:', stringifyLogValue(payload));
+  console.log('[Connect.Me] upsert payload', stringifyLogValue(payload));
 
   const rows = await restRequest('user_privacy_settings', {
     method: 'POST',
     query: '?on_conflict=user_id',
+    headers: {
+      Prefer: 'resolution=merge-duplicates,return=representation'
+    },
     body: payload
   });
 
-  console.log('[Connect.Me] Supabase privacy save response:', stringifyLogValue(rows));
+  console.log('[Connect.Me] upsert result', stringifyLogValue(rows));
 
-  return normalizePrivacySettingsRow(rows?.[0] || payload);
+  const { normalized } = await getPrivacySettingsRecord();
+  return normalized;
 }
 
 export async function updatePresenceSharingPreference(enabled) {
