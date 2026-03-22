@@ -436,26 +436,66 @@ function renderTopSites() {
 
 function renderUserCard(user) {
   const publicUser = getPublicProfile(user);
+  const sharedName = [publicUser.first_name, publicUser.last_name].filter(Boolean).join(' ').trim();
+  const titleMarkup = sharedName
+    ? `<strong>${escapeHtml(sharedName)}</strong>`
+    : `<strong>${escapeHtml(getDisplayName(publicUser))}</strong>`;
+  const subtitleMarkup = publicUser.headline
+    ? `<div class="muted">${escapeHtml(publicUser.headline)}</div>`
+    : publicUser.place_of_work
+      ? `<div class="muted">${escapeHtml(publicUser.place_of_work)}</div>`
+      : '<div class="muted">Connect.Me member</div>';
   const sharedMeta = [
     publicUser.place_of_work ? `<span class="meta-pill">Work: ${escapeHtml(publicUser.place_of_work)}</span>` : '',
     publicUser.education ? `<span class="meta-pill">Education: ${escapeHtml(publicUser.education)}</span>` : '',
     publicUser.current_location ? `<span class="meta-pill">Location: ${escapeHtml(publicUser.current_location)}</span>` : ''
   ].filter(Boolean).join('');
-  const bioMarkup = publicUser.bio
-    ? `<p>${escapeHtml(publicUser.bio)}</p>`
-    : '<p class="muted hidden-field-note">This user is sharing a limited public profile.</p>';
+  const visibleFieldCount = [
+    Boolean(publicUser.avatar_url),
+    Boolean(publicUser.first_name),
+    Boolean(publicUser.last_name),
+    Boolean(publicUser.place_of_work),
+    Boolean(publicUser.education),
+    Boolean(publicUser.current_location),
+    Boolean(publicUser.bio),
+    Boolean(publicUser.headline)
+  ].filter(Boolean).length;
+  const limitedProfileNote = visibleFieldCount <= 2
+    ? '<p class="muted hidden-field-note">This user is sharing a limited public profile.</p>'
+    : '';
+  const detailMarkup = [
+    sharedMeta ? `<div class="user-meta-list">${sharedMeta}</div>` : '',
+    publicUser.bio ? `<p>${escapeHtml(publicUser.bio)}</p>` : '',
+    limitedProfileNote
+  ].filter(Boolean).join('');
+
+  logStructured('log', '[Connect.Me] Rendering shared user card', {
+    userId: publicUser.id,
+    visibleFieldCount,
+    visibleFields: {
+      share_avatar: Boolean(publicUser.avatar_url),
+      share_first_name: Boolean(publicUser.first_name),
+      share_last_name: Boolean(publicUser.last_name),
+      share_place_of_work: Boolean(publicUser.place_of_work),
+      share_education: Boolean(publicUser.education),
+      share_current_location: Boolean(publicUser.current_location),
+      share_bio: Boolean(publicUser.bio),
+      headline: Boolean(publicUser.headline)
+    },
+    avatar_url: publicUser.avatar_url,
+    avatar_path: publicUser.avatar_path
+  });
 
   return `
     <div class="user-card">
       <div class="user-row">
         ${renderAvatar(publicUser, 'small')}
         <div>
-          <strong>${escapeHtml(getDisplayName(publicUser))}</strong>
-          <div class="muted">${escapeHtml(publicUser.headline || publicUser.place_of_work || 'Connect.Me member')}</div>
+          ${titleMarkup}
+          ${subtitleMarkup}
         </div>
       </div>
-      ${sharedMeta ? `<div class="user-meta-list">${sharedMeta}</div>` : ''}
-      ${bioMarkup}
+      ${detailMarkup}
       <small class="muted">Last seen ${new Date(publicUser.last_seen).toLocaleTimeString()}</small>
     </div>
   `;
