@@ -5,6 +5,7 @@ import {
   extractTabInfo,
   getDefaultPrivacySettings,
   getPrivacySettings,
+  hasCompleteProfile,
   purgeExpiredHistory,
   recordHistory,
   setLocalStore,
@@ -13,12 +14,25 @@ import {
 
 const HEARTBEAT_ALARM = 'connectme-heartbeat';
 const PURGE_ALARM = 'connectme-purge';
-const LAST_TRACKED_TAB_KEY = 'lastTrackedSite';
-const PRESENCE_FRESHNESS_MS = 2 * 60 * 1000;
+const LAST_TRACKED_TAB_KEY = 'connectme-last-tracked';
+const PRESENCE_EXPIRY_MS = 3 * 60 * 1000;
 
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tabs[0] || null;
+}
+
+function shouldTrackHistory(privacy) {
+  return Boolean(privacy?.consentGranted && privacy?.trackingEnabled && privacy?.historyMode !== 'none');
+}
+
+function shouldSharePresence(privacy, profile) {
+  return Boolean(
+    privacy?.consentGranted &&
+    privacy?.presenceSharingEnabled &&
+    !privacy?.invisibleModeEnabled &&
+    hasCompleteProfile(profile)
+  );
 }
 
 async function trackActiveContext(reason = 'heartbeat') {
@@ -29,73 +43,80 @@ async function trackActiveContext(reason = 'heartbeat') {
       return;
     }
 
-    let privacy;
+    let privacy = getDefaultPrivacySettings();
     try {
       privacy = await getPrivacySettings();
     } catch (_error) {
       privacy = getDefaultPrivacySettings();
     }
 
-    if (!privacy.consentGranted) {
-      await clearPresence().catch(() => null);
-      return;
-    }
-
+    const profile = session.user.user_metadata?.connectme_profile || null;
     const tab = await getActiveTab();
     const tabInfo = extractTabInfo(tab?.url);
-    if (!tabInfo) {
+
+    if (!privacy.consentGranted || !tabInfo) {
       await clearPresence().catch(() => null);
       return;
     }
 
     const nowIso = new Date().toISOString();
-    const storage = await chrome.storage.local.get(LAST_TRACKED_TAB_KEY);
-    const lastTracked = storage[LAST_TRACKED_TAB_KEY];
+    const { [LAST_TRACKED_TAB_KEY]: lastTracked } = await chrome.storage.local.get(LAST_TRACKED_TAB_KEY);
 
-    if (privacy.trackingEnabled && privacy.historyMode !== 'none') {
-      const granularity = privacy.historyMode;
-      const siteIdentifier = granularity === 'full_url' ? tabInfo.url : granularity === 'path' ? `${tabInfo.domain}${tabInfo.path}` : tabInfo.domain;
-      const shouldWriteHistory = !lastTracked || lastTracked.siteIdentifier !== siteIdentifier || reason === 'tab-changed';
-      if (shouldWriteHistory) {
+    if (shouldTrackHistory(privacy)) {
+      const siteIdentifier =
+        privacy.historyMode === 'full_url'
+          ? tabInfo.url
+          : privacy.historyMode === 'path'
+            ? `${tabInfo.domain}${tabInfo.path}`
+            : tabInfo.domain;
+
+      const shouldWrite = !lastTracked || lastTracked.siteIdentifier !== siteIdentifier || reason !== 'heartbeat';
+
+      if (shouldWrite) {
         await recordHistory({
           domain: tabInfo.domain,
-          path: granularity === 'domain' ? null : tabInfo.path,
-          full_url: granularity === 'full_url' ? tabInfo.url : null,
+          path: privacy.historyMode === 'domain' ? null : tabInfo.path,
+          full_url: privacy.historyMode === 'full_url' ? tabInfo.url : null,
           page_title: tab?.title || tabInfo.title,
-          tracked_scope: granularity,
+          tracked_scope: privacy.historyMode,
           visited_at: nowIso,
           expires_at: buildExpiryIso(privacy.retentionUnit, privacy.retentionValue)
         }).catch(() => null);
+
         await setLocalStore({
           [LAST_TRACKED_TAB_KEY]: {
             siteIdentifier,
-            updatedAt: nowIso
+            trackedAt: nowIso
           }
         });
       }
     }
 
-    const shouldSharePresence = privacy.presenceSharingEnabled && !privacy.invisibleModeEnabled;
-    if (shouldSharePresence) {
+    if (shouldSharePresence(privacy, profile)) {
       await upsertPresence({
         domain: tabInfo.domain,
         path: tabInfo.path,
         full_url: tabInfo.url,
         page_title: tab?.title || tabInfo.title,
         last_seen: nowIso,
-        expires_at: new Date(Date.now() + PRESENCE_FRESHNESS_MS).toISOString()
+        expires_at: new Date(Date.now() + PRESENCE_EXPIRY_MS).toISOString()
       }).catch(() => null);
     } else {
       await clearPresence().catch(() => null);
     }
   } catch (_error) {
-    // Service worker should remain resilient when the user has not configured Supabase yet.
+    // Avoid breaking the service worker when Supabase is not configured yet.
   }
 }
 
-async function initialize() {
+function scheduleAlarms() {
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 1 });
-  chrome.alarms.create(PURGE_ALARM, { periodInMinutes: 30 });
+  chrome.alarms.create(PURGE_ALARM, { periodInMinutes: 15 });
+}
+
+async function initialize() {
+  scheduleAlarms();
+  await purgeExpiredHistory().catch(() => null);
   await trackActiveContext('startup');
 }
 
@@ -111,18 +132,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === HEARTBEAT_ALARM) {
     await trackActiveContext('heartbeat');
   }
+
   if (alarm.name === PURGE_ALARM) {
     await purgeExpiredHistory().catch(() => null);
   }
 });
 
 chrome.tabs.onActivated.addListener(async () => {
-  await trackActiveContext('tab-changed');
+  await trackActiveContext('tab-activated');
 });
 
 chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.active) {
-    await trackActiveContext('tab-changed');
+  if (tab.active && changeInfo.status === 'complete') {
+    await trackActiveContext('tab-updated');
   }
 });
 
@@ -139,5 +161,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+
+  if (message?.type === 'CLEAR_PRESENCE') {
+    clearPresence()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   return false;
 });
