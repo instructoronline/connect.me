@@ -122,13 +122,28 @@ export function getDefaultPrivacySettings() {
 export function getRetentionOptions() {
   const options = [];
   for (let hour = 1; hour <= 12; hour += 1) {
-    options.push({ unit: 'hours', value: hour, label: `${hour} hour${hour === 1 ? '' : 's'}` });
+    options.push({
+      unit: 'hours',
+      retentionValue: hour,
+      value: `${hour}|hours`,
+      label: `${hour} hour${hour === 1 ? '' : 's'}`
+    });
   }
   for (let day = 1; day <= 30; day += 1) {
-    options.push({ unit: 'days', value: day, label: `${day} day${day === 1 ? '' : 's'}` });
+    options.push({
+      unit: 'days',
+      retentionValue: day,
+      value: `${day}|days`,
+      label: `${day} day${day === 1 ? '' : 's'}`
+    });
   }
   for (let month = 1; month <= 30; month += 1) {
-    options.push({ unit: 'months', value: month, label: `${month} month${month === 1 ? '' : 's'}` });
+    options.push({
+      unit: 'months',
+      retentionValue: month,
+      value: `${month}|months`,
+      label: `${month} month${month === 1 ? '' : 's'}`
+    });
   }
   return options;
 }
@@ -627,10 +642,24 @@ export async function saveUserMetadataProfileSnapshot(profile) {
 }
 
 export async function getProfile() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Please sign in first.');
+  }
+
+  const query = `?select=id,email,display_name,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,created_at,updated_at&id=eq.${encodeURIComponent(user.id)}&limit=1`;
   const rows = await restRequest('profiles', {
-    query: '?select=id,email,display_name,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,created_at,updated_at&limit=1'
+    query
   });
-  return rows?.[0] || null;
+  const profile = rows?.[0] || null;
+
+  console.log('[Connect.Me] Profile fetch result:', stringifyLogValue({
+    userId: user.id,
+    rowExists: Boolean(profile),
+    profile
+  }));
+
+  return profile;
 }
 
 export async function upsertProfile(profile) {
@@ -654,12 +683,37 @@ export async function upsertProfile(profile) {
     avatar_url: profile.avatar_url || ''
   };
 
-  const rows = await restRequest('profiles', {
-    method: 'POST',
-    query: '?on_conflict=id',
+  console.log('[Connect.Me] Profile save payload:', stringifyLogValue(payload));
+
+  let rows = await restRequest('profiles', {
+    method: 'PATCH',
+    query: `?id=eq.${encodeURIComponent(user.id)}`,
+    headers: {
+      Prefer: 'return=representation'
+    },
     body: payload
   });
-  return rows?.[0] || payload;
+
+  if (!rows?.length) {
+    rows = await restRequest('profiles', {
+      method: 'POST',
+      query: '?on_conflict=id',
+      headers: {
+        Prefer: 'resolution=merge-duplicates,return=representation'
+      },
+      body: payload
+    });
+  }
+
+  const savedProfile = rows?.[0] || null;
+
+  console.log('[Connect.Me] Profile save result:', stringifyLogValue({
+    userId: user.id,
+    rowCount: Array.isArray(rows) ? rows.length : 0,
+    savedProfile
+  }));
+
+  return savedProfile || payload;
 }
 
 export async function uploadProfileImage(file) {
@@ -727,7 +781,7 @@ export async function getPrivacySettingsRecord() {
   const row = rows?.[0] || null;
   const normalized = normalizePrivacySettingsRow(row);
 
-  console.log('[Connect.Me] fetched settings row', stringifyLogValue({
+  console.log('[Connect.Me] Privacy settings fetch result:', stringifyLogValue({
     userId: user.id,
     row,
     normalized,
@@ -767,18 +821,29 @@ export async function upsertPrivacySettings(privacy) {
     invisible_mode_enabled: Boolean(privacy.invisibleModeEnabled)
   };
 
-  console.log('[Connect.Me] upsert payload', stringifyLogValue(payload));
+  console.log('[Connect.Me] Privacy settings save payload:', stringifyLogValue(payload));
 
-  const rows = await restRequest('user_privacy_settings', {
-    method: 'POST',
-    query: '?on_conflict=user_id',
+  let rows = await restRequest('user_privacy_settings', {
+    method: 'PATCH',
+    query: `?user_id=eq.${encodeURIComponent(user.id)}`,
     headers: {
-      Prefer: 'resolution=merge-duplicates,return=representation'
+      Prefer: 'return=representation'
     },
     body: payload
   });
 
-  console.log('[Connect.Me] upsert result', stringifyLogValue(rows));
+  if (!rows?.length) {
+    rows = await restRequest('user_privacy_settings', {
+      method: 'POST',
+      query: '?on_conflict=user_id',
+      headers: {
+        Prefer: 'resolution=merge-duplicates,return=representation'
+      },
+      body: payload
+    });
+  }
+
+  console.log('[Connect.Me] Privacy settings save result:', stringifyLogValue(rows));
 
   const { normalized } = await getPrivacySettingsRecord();
   return normalized;
@@ -791,21 +856,21 @@ export async function updatePresenceSharingPreference(enabled) {
     presenceSharingEnabled: Boolean(enabled)
   };
 
-  console.log('[Connect.Me] Presence transition requested', {
+  console.log('[Connect.Me] Presence transition requested:', stringifyLogValue({
     previous: current.presenceSharingEnabled,
     next: next.presenceSharingEnabled,
     invisibleModeEnabled: current.invisibleModeEnabled,
     consentGranted: current.consentGranted
-  });
+  }));
 
   const saved = await upsertPrivacySettings(next);
 
-  console.log('[Connect.Me] Presence transition saved', {
+  console.log('[Connect.Me] Presence transition saved:', stringifyLogValue({
     previous: current.presenceSharingEnabled,
     saved: saved.presenceSharingEnabled,
     invisibleModeEnabled: saved.invisibleModeEnabled,
     consentGranted: saved.consentGranted
-  });
+  }));
 
   return saved;
 }
