@@ -33,10 +33,27 @@ const HISTORY_MODE_OPTIONS = [
   { value: 'full_url', label: 'Full URL' }
 ];
 
+function createFormState(retentionSelection = '') {
+  return {
+    retentionSelection,
+    parsedRetention: retentionSelection ? parseRetentionSelection(retentionSelection) : null,
+    lastError: ''
+  };
+}
+
 const state = {
   user: null,
   profile: null,
   privacy: getDefaultPrivacySettings(),
+  formState: {
+    consent: createFormState(),
+    settings: createFormState()
+  },
+  presenceAvailability: {
+    canUsePresenceToggle: false,
+    canViewPresenceData: false,
+    note: 'Enable presence sharing to see active members on this site.'
+  },
   tabInfo: null,
   topSites: [],
   detailDomain: null,
@@ -78,6 +95,78 @@ function setInlineValidation(message = '') {
     els.privacyValidationMessage.classList.add('subtle');
     els.privacyValidationMessage.classList.remove('error');
   }
+}
+
+function getRetentionSelectionFromSavedPrivacy(privacy = state.privacy) {
+  return `${privacy.retentionUnit}:${privacy.retentionValue}`;
+}
+
+function computePresenceAvailability(privacy = state.privacy, profile = state.profile, user = state.user) {
+  const loggedIn = Boolean(user);
+  const profileComplete = hasCompleteProfile(profile);
+  const consentSaved = Boolean(privacy?.consentGranted);
+  const presencePreferenceSaved = Boolean(privacy?.presenceSharingEnabled);
+  const invisibleModeEnabled = Boolean(privacy?.invisibleModeEnabled);
+
+  let note = 'Enable presence sharing to see active members on this site.';
+  if (!loggedIn) {
+    note = 'Log in to use live presence features.';
+  } else if (!consentSaved) {
+    note = 'Save consent settings before presence can begin.';
+  } else if (!profileComplete) {
+    note = 'Finish your full profile to enable presence sharing.';
+  } else if (invisibleModeEnabled) {
+    note = 'Invisible Mode is on. You can browse without appearing to other users.';
+  } else if (!presencePreferenceSaved) {
+    note = 'Presence sharing is currently off.';
+  } else {
+    note = 'Presence sharing is on. Only currently active users are shown.';
+  }
+
+  return {
+    loggedIn,
+    consentSaved,
+    profileComplete,
+    presencePreferenceSaved,
+    invisibleModeEnabled,
+    canUsePresenceToggle: Boolean(loggedIn && consentSaved && profileComplete),
+    canViewPresenceData: Boolean(loggedIn && consentSaved && profileComplete && presencePreferenceSaved && !invisibleModeEnabled),
+    note
+  };
+}
+
+function updatePresenceAvailability() {
+  state.presenceAvailability = computePresenceAvailability();
+  console.log('[Connect.Me] Presence availability updated', state.presenceAvailability);
+}
+
+function syncFormState(source, selection, { clearValidation = false } = {}) {
+  const parsedRetention = parseRetentionSelection(selection);
+  state.formState[source] = {
+    ...state.formState[source],
+    retentionSelection: selection,
+    parsedRetention,
+    lastError: parsedRetention ? '' : state.formState[source]?.lastError || ''
+  };
+
+  console.log('[Connect.Me] Retention form state synced', {
+    source,
+    selection,
+    parsedRetention
+  });
+
+  if (clearValidation && parsedRetention) {
+    setInlineValidation('');
+  }
+
+  return parsedRetention;
+}
+
+function setFormError(source, message = '') {
+  state.formState[source] = {
+    ...state.formState[source],
+    lastError: message
+  };
 }
 
 function populateSelect(select, options, selectedValue) {
@@ -190,50 +279,38 @@ function renderDomainBadge() {
 }
 
 function renderPresenceControls() {
-  const allowed = hasCompleteProfile(state.profile);
-  const presenceEnabled = Boolean(state.privacy.presenceSharingEnabled && allowed);
+  updatePresenceAvailability();
+  const availability = state.presenceAvailability;
+  const presencePreferenceSaved = Boolean(state.privacy.presenceSharingEnabled);
 
-  els.presenceQuickToggle.checked = presenceEnabled;
-  els.presenceSharingInline.checked = presenceEnabled;
-  els.presenceSharingEnabled.checked = presenceEnabled;
+  els.presenceQuickToggle.checked = presencePreferenceSaved;
+  els.presenceSharingInline.checked = presencePreferenceSaved;
+  els.presenceSharingEnabled.checked = presencePreferenceSaved;
   els.invisibleModeEnabled.checked = Boolean(state.privacy.invisibleModeEnabled);
 
-  els.presenceQuickToggle.disabled = !state.user || !state.privacy.consentGranted || !allowed;
-  els.presenceSharingInline.disabled = !state.user || !state.privacy.consentGranted || !allowed;
+  els.presenceQuickToggle.disabled = !availability.canUsePresenceToggle;
+  els.presenceSharingInline.disabled = !availability.canUsePresenceToggle;
 
-  let note = 'Enable presence sharing to see active members on this site.';
-  if (!state.user) {
-    note = 'Log in to use live presence features.';
-  } else if (!state.privacy.consentGranted) {
-    note = 'Save consent settings before presence can begin.';
-  } else if (!allowed) {
-    note = 'Finish your full profile to enable presence sharing.';
-  } else if (state.privacy.invisibleModeEnabled) {
-    note = 'Invisible Mode is on. You can browse without appearing to other users.';
-  } else if (!state.privacy.presenceSharingEnabled) {
-    note = 'Presence sharing is currently off.';
-  } else {
-    note = 'Presence sharing is on. Only currently active users are shown.';
-  }
-  els.presenceStateNote.textContent = note;
+  els.presenceStateNote.textContent = availability.note;
 }
 
 function renderPrivacySettingsForm() {
   els.trackingConsent.checked = Boolean(state.privacy.consentGranted);
   els.trackingEnabled.checked = Boolean(state.privacy.trackingEnabled);
-  els.presenceSharingEnabled.checked = Boolean(state.privacy.presenceSharingEnabled && hasCompleteProfile(state.profile));
+  els.presenceSharingEnabled.checked = Boolean(state.privacy.presenceSharingEnabled);
   els.invisibleModeEnabled.checked = Boolean(state.privacy.invisibleModeEnabled);
   populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode);
-  populateSelect(els.retentionSelect, getRetentionOptions(), `${state.privacy.retentionUnit}:${state.privacy.retentionValue}`);
-  setInlineValidation('');
+  populateSelect(els.retentionSelect, getRetentionOptions(), getRetentionSelectionFromSavedPrivacy());
+  syncFormState('settings', els.retentionSelect.value, { clearValidation: true });
 }
 
 function renderConsentForm() {
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode || 'domain');
-  populateSelect(els.consentRetention, getRetentionOptions(), `${state.privacy.retentionUnit}:${state.privacy.retentionValue}`);
+  populateSelect(els.consentRetention, getRetentionOptions(), getRetentionSelectionFromSavedPrivacy());
   els.consentTrackingEnabled.checked = Boolean(state.privacy.trackingEnabled);
   els.consentPresenceEnabled.checked = Boolean(state.privacy.presenceSharingEnabled);
   els.consentInvisibleMode.checked = Boolean(state.privacy.invisibleModeEnabled);
+  syncFormState('consent', els.consentRetention.value, { clearValidation: true });
 }
 
 function renderPrivacyTab() {
@@ -303,6 +380,8 @@ async function openTopSiteDetail(domain) {
 }
 
 async function renderActiveUsers() {
+  updatePresenceAvailability();
+
   if (!state.tabInfo?.domain) {
     els.activeUsersList.innerHTML = '<div class="empty-state">Open a website to view live activity on the current domain.</div>';
     return;
@@ -313,17 +392,17 @@ async function renderActiveUsers() {
     return;
   }
 
-  if (!state.privacy.consentGranted) {
+  if (!state.presenceAvailability.consentSaved) {
     els.activeUsersList.innerHTML = '<div class="empty-state">Save consent preferences before any presence data is shown.</div>';
     return;
   }
 
-  if (!hasCompleteProfile(state.profile)) {
+  if (!state.presenceAvailability.profileComplete) {
     els.activeUsersList.innerHTML = '<div class="empty-state">Complete your full profile to use presence and community features.</div>';
     return;
   }
 
-  if (!state.privacy.presenceSharingEnabled || state.privacy.invisibleModeEnabled) {
+  if (!state.presenceAvailability.canViewPresenceData) {
     els.activeUsersList.innerHTML = '<div class="empty-state">Turn on presence sharing and turn off Invisible Mode to see other active users here.</div>';
     return;
   }
@@ -386,6 +465,12 @@ async function refreshState() {
     state.privacy = getDefaultPrivacySettings();
   }
 
+  console.log('[Connect.Me] Popup state refreshed', {
+    userId: state.user?.id || null,
+    profileComplete: hasCompleteProfile(state.profile),
+    privacy: state.privacy
+  });
+
   renderAuthState();
   renderProfileForm();
   renderProfileSummary();
@@ -427,15 +512,15 @@ function validateProfilePayload(profile) {
 
 function buildPrivacyPayload(source) {
   const retentionSelection = source === 'consent' ? els.consentRetention.value : els.retentionSelect.value;
-  const retention = parseRetentionSelection(retentionSelection);
+  const retention = syncFormState(source, retentionSelection, { clearValidation: true });
 
   if (!retention) {
-    throw new Error('Please choose a valid retention window before saving your settings.');
+    const message = `Unable to parse the selected retention window (${retentionSelection || 'empty selection'}). Please choose one of the supported values, such as 1 hour, 2 hours, 12 hours, 1 day, 30 days, 1 month, or 30 months.`;
+    setFormError(source, message);
+    throw new Error(message);
   }
 
-  const profileComplete = hasCompleteProfile(state.profile);
-  const presenceRequested = source === 'consent' ? els.consentPresenceEnabled.checked : els.presenceSharingEnabled.checked;
-  const presenceAllowed = profileComplete ? presenceRequested : false;
+  setFormError(source, '');
 
   return {
     consentGranted: source === 'consent' ? true : els.trackingConsent.checked,
@@ -443,34 +528,53 @@ function buildPrivacyPayload(source) {
     historyMode: source === 'consent' ? els.consentHistoryMode.value : els.historyMode.value,
     retentionUnit: retention.retentionUnit,
     retentionValue: retention.retentionValue,
-    presenceSharingEnabled: presenceAllowed,
+    presenceSharingEnabled: source === 'consent' ? els.consentPresenceEnabled.checked : els.presenceSharingEnabled.checked,
     invisibleModeEnabled: source === 'consent' ? els.consentInvisibleMode.checked : els.invisibleModeEnabled.checked
   };
 }
 
+async function syncSavedPrivacyState(savedPrivacy, source) {
+  state.privacy = savedPrivacy || getDefaultPrivacySettings();
+  console.log('[Connect.Me] Applying saved privacy state to popup', { source, savedPrivacy: state.privacy });
+  renderAuthState();
+  renderConsentForm();
+  renderPrivacySettingsForm();
+  renderPresenceControls();
+  await renderActiveUsers();
+  await loadTopSites();
+}
+
 async function savePrivacy(source) {
   const payload = buildPrivacyPayload(source);
-  await upsertPrivacySettings(payload);
-  state.privacy = payload;
+  console.log('[Connect.Me] Attempting privacy save from popup', { source, payload });
+  const savedPrivacy = await upsertPrivacySettings(payload);
+  await syncSavedPrivacyState(savedPrivacy, source);
 
-  if (!payload.presenceSharingEnabled || payload.invisibleModeEnabled) {
+  if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
     chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
   } else {
-    chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'privacy-updated' });
+    chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: source === 'consent' ? 'consent-saved' : 'privacy-updated' });
   }
 
-  renderPresenceControls();
-  renderPrivacySettingsForm();
-  await renderActiveUsers();
+  setInlineValidation('');
+
+  return savedPrivacy;
 }
 
 async function togglePresence(enabled) {
+  console.log('[Connect.Me] Presence toggle requested', {
+    requestedEnabled: enabled,
+    savedPrivacy: state.privacy,
+    availability: state.presenceAvailability
+  });
+
   if (!state.user) {
     setStatus('Please log in before changing presence settings.', 'error');
     return;
   }
   if (!state.privacy.consentGranted) {
-    setStatus('Please save consent preferences before enabling presence sharing.', 'error');
+    setStatus('Save consent preferences before enabling presence sharing.', 'error');
+    renderPresenceControls();
     return;
   }
   if (!hasCompleteProfile(state.profile)) {
@@ -480,18 +584,18 @@ async function togglePresence(enabled) {
   }
 
   try {
-    state.privacy = await updatePresenceSharingPreference(enabled);
-    renderPresenceControls();
-    await renderActiveUsers();
-    if (enabled && !state.privacy.invisibleModeEnabled) {
+    const savedPrivacy = await updatePresenceSharingPreference(enabled);
+    await syncSavedPrivacyState(savedPrivacy, 'presence-toggle');
+    if (savedPrivacy.presenceSharingEnabled && !savedPrivacy.invisibleModeEnabled) {
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'presence-enabled' });
+      setStatus('Presence enabled.', 'success');
     } else {
       chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+      setStatus('Presence disabled.', 'success');
     }
-    setStatus('Settings saved successfully', 'success');
   } catch (error) {
     renderPresenceControls();
-    setStatus(error.message, 'error');
+    setStatus(error.message || 'Unable to update presence settings.', 'error');
   }
 }
 
@@ -586,14 +690,16 @@ async function bindEvents() {
 
   els.consentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    setStatus('Saving consent…');
+    setStatus('Saving consent preferences…');
     try {
       await savePrivacy('consent');
-      await refreshState();
-      setStatus('Consent saved successfully', 'success');
+      setStatus('Consent preferences saved successfully.', 'success');
     } catch (error) {
-      setStatus(error.message, 'error');
-      setInlineValidation(error.message);
+      const message = error.message || 'Unable to save consent preferences.';
+      setStatus(message, 'error');
+      setInlineValidation(message);
+      setFormError('consent', message);
+      console.error('[Connect.Me] Consent save failed', { error });
     }
   });
 
@@ -640,12 +746,28 @@ async function bindEvents() {
     setStatus('Saving privacy settings…');
     try {
       await savePrivacy('settings');
-      await refreshState();
-      setStatus('Settings saved successfully', 'success');
+      setStatus('Consent preferences saved successfully.', 'success');
     } catch (error) {
-      setStatus(error.message, 'error');
-      setInlineValidation(error.message);
+      const message = error.message || 'Unable to save consent preferences.';
+      setStatus(message, 'error');
+      setInlineValidation(message);
+      setFormError('settings', message);
+      console.error('[Connect.Me] Privacy settings save failed', { error });
     }
+  });
+
+  [
+    ['consent', els.consentRetention],
+    ['settings', els.retentionSelect]
+  ].forEach(([source, select]) => {
+    select.addEventListener('change', () => {
+      const parsed = syncFormState(source, select.value, { clearValidation: true });
+      if (!parsed) {
+        const message = `Unable to parse the selected retention window (${select.value || 'empty selection'}). Please choose a supported retention value.`;
+        setInlineValidation(message);
+        setFormError(source, message);
+      }
+    });
   });
 
   [els.presenceQuickToggle, els.presenceSharingInline].forEach((input) => {
