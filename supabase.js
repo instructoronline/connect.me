@@ -116,35 +116,247 @@ export function getRetentionOptions() {
   return options;
 }
 
-export function parseRetentionSelection(selection) {
-  console.log('[Connect.Me] Parsing retention selection', { selection });
+function stringifyLogValue(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
 
-  if (!selection) {
+function normalizeRetentionUnit(unit) {
+  if (!unit) {
+    return null;
+  }
+
+  const normalized = String(unit).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (['hour', 'hours'].includes(normalized)) {
+    return 'hours';
+  }
+  if (['day', 'days'].includes(normalized)) {
+    return 'days';
+  }
+  if (['month', 'months'].includes(normalized)) {
+    return 'months';
+  }
+  return null;
+}
+
+function parseRetentionMachineValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = String(value).trim();
+  let match = trimmed.match(/^(\d{1,2})\|(hours|days|months)$/i);
+  if (match) {
+    return {
+      retentionValue: Number(match[1]),
+      retentionUnit: match[2].toLowerCase(),
+      format: 'machine-value'
+    };
+  }
+
+  match = trimmed.match(/^(hours|days|months):(\d{1,2})$/i);
+  if (match) {
+    return {
+      retentionValue: Number(match[2]),
+      retentionUnit: match[1].toLowerCase(),
+      format: 'legacy-compact'
+    };
+  }
+
+  match = trimmed.match(/^(\d{1,2})\s+(hour|hours|day|days|month|months)$/i);
+  if (match) {
+    return {
+      retentionValue: Number(match[1]),
+      retentionUnit: normalizeRetentionUnit(match[2]),
+      format: 'natural-label'
+    };
+  }
+
+  return null;
+}
+
+export function normalizeRetentionSelection(selection) {
+  const normalized = {
+    rawSelection: selection,
+    selectionType: selection === null ? 'null' : Array.isArray(selection) ? 'array' : typeof selection,
+    machineValue: null,
+    displayLabel: null,
+    derivedFrom: null,
+    fieldSnapshot: null
+  };
+
+  if (selection == null || selection === '') {
+    return normalized;
+  }
+
+  if (typeof selection === 'string') {
+    const trimmed = selection.trim();
+    return {
+      ...normalized,
+      machineValue: trimmed || null,
+      displayLabel: trimmed || null,
+      derivedFrom: 'string'
+    };
+  }
+
+  if (typeof selection === 'number') {
+    const asString = String(selection);
+    return {
+      ...normalized,
+      machineValue: asString,
+      displayLabel: asString,
+      derivedFrom: 'number'
+    };
+  }
+
+  if (typeof selection === 'object') {
+    const snapshot = {
+      value: selection.value ?? null,
+      label: selection.label ?? null,
+      selected: selection.selected ?? null,
+      retentionValue: selection.retentionValue ?? null,
+      retentionUnit: selection.retentionUnit ?? null,
+      unit: selection.unit ?? null
+    };
+
+    if (selection.retentionValue != null && normalizeRetentionUnit(selection.retentionUnit ?? selection.unit)) {
+      return {
+        ...normalized,
+        machineValue: `${Number(selection.retentionValue)}|${normalizeRetentionUnit(selection.retentionUnit ?? selection.unit)}`,
+        displayLabel: selection.label ? String(selection.label).trim() : null,
+        derivedFrom: 'retention-parts',
+        fieldSnapshot: snapshot
+      };
+    }
+
+    if (typeof selection.value === 'number' && normalizeRetentionUnit(selection.unit ?? selection.retentionUnit)) {
+      return {
+        ...normalized,
+        machineValue: `${selection.value}|${normalizeRetentionUnit(selection.unit ?? selection.retentionUnit)}`,
+        displayLabel: selection.label ? String(selection.label).trim() : null,
+        derivedFrom: 'numeric-value-and-unit',
+        fieldSnapshot: snapshot
+      };
+    }
+
+    if (selection.value != null) {
+      const nested = normalizeRetentionSelection(selection.value);
+      if (nested.machineValue || nested.displayLabel) {
+        return {
+          ...normalized,
+          machineValue: nested.machineValue,
+          displayLabel: selection.label ? String(selection.label).trim() : (nested.displayLabel || null),
+          derivedFrom: `value:${nested.derivedFrom || typeof selection.value}`,
+          fieldSnapshot: snapshot
+        };
+      }
+    }
+
+    if (selection.selected != null) {
+      const nested = normalizeRetentionSelection(selection.selected);
+      if (nested.machineValue || nested.displayLabel) {
+        return {
+          ...normalized,
+          machineValue: nested.machineValue,
+          displayLabel: selection.label ? String(selection.label).trim() : (nested.displayLabel || null),
+          derivedFrom: `selected:${nested.derivedFrom || typeof selection.selected}`,
+          fieldSnapshot: snapshot
+        };
+      }
+    }
+
+    if (selection.label != null) {
+      const label = String(selection.label).trim();
+      return {
+        ...normalized,
+        machineValue: label || null,
+        displayLabel: label || null,
+        derivedFrom: 'label',
+        fieldSnapshot: snapshot
+      };
+    }
+
+    return {
+      ...normalized,
+      derivedFrom: 'object-unrecognized',
+      fieldSnapshot: snapshot
+    };
+  }
+
+  const fallback = String(selection).trim();
+  return {
+    ...normalized,
+    machineValue: fallback || null,
+    displayLabel: fallback || null,
+    derivedFrom: typeof selection
+  };
+}
+
+export function parseRetentionSelection(selection) {
+  const normalized = normalizeRetentionSelection(selection);
+  console.log('[Connect.Me] Retention raw selection:', stringifyLogValue(selection));
+  console.log('[Connect.Me] Retention normalized selection:', stringifyLogValue({
+    selectionType: normalized.selectionType,
+    machineValue: normalized.machineValue,
+    displayLabel: normalized.displayLabel,
+    derivedFrom: normalized.derivedFrom,
+    fieldSnapshot: normalized.fieldSnapshot
+  }));
+
+  if (!normalized.machineValue && !normalized.displayLabel) {
     console.warn('[Connect.Me] Retention parsing failed: empty selection');
     return null;
   }
 
-  const compactMatch = String(selection).trim().match(/^(hours|days|months):(\d{1,2})$/i);
-  if (compactMatch) {
-    const retentionUnit = compactMatch[1].toLowerCase();
-    const retentionValue = Number(compactMatch[2]);
-    const parsed = validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
-    console.log('[Connect.Me] Retention parsing result', { selection, parsed, format: 'compact' });
+  const machineCandidate = parseRetentionMachineValue(normalized.machineValue);
+  if (machineCandidate) {
+    const parsed = validateRetentionParts(machineCandidate.retentionUnit, machineCandidate.retentionValue)
+      ? {
+          retentionUnit: machineCandidate.retentionUnit,
+          retentionValue: machineCandidate.retentionValue
+        }
+      : null;
+    console.log('[Connect.Me] Retention parsed result:', stringifyLogValue({
+      parsed,
+      format: machineCandidate.format,
+      machineValue: normalized.machineValue
+    }));
     return parsed;
   }
 
-  const naturalMatch = String(selection).trim().match(/^(\d{1,2})\s+(hour|hours|day|days|month|months)$/i);
-  if (!naturalMatch) {
-    console.warn('[Connect.Me] Retention parsing failed: unsupported format', { selection });
-    return null;
+  const displayCandidate = parseRetentionMachineValue(normalized.displayLabel);
+  if (displayCandidate) {
+    const parsed = validateRetentionParts(displayCandidate.retentionUnit, displayCandidate.retentionValue)
+      ? {
+          retentionUnit: displayCandidate.retentionUnit,
+          retentionValue: displayCandidate.retentionValue
+        }
+      : null;
+    console.log('[Connect.Me] Retention parsed result:', stringifyLogValue({
+      parsed,
+      format: displayCandidate.format,
+      displayLabel: normalized.displayLabel
+    }));
+    return parsed;
   }
 
-  const retentionValue = Number(naturalMatch[1]);
-  const unitToken = naturalMatch[2].toLowerCase();
-  const retentionUnit = unitToken.endsWith('s') ? unitToken : `${unitToken}s`;
-  const parsed = validateRetentionParts(retentionUnit, retentionValue) ? { retentionUnit, retentionValue } : null;
-  console.log('[Connect.Me] Retention parsing result', { selection, parsed, format: 'natural' });
-  return parsed;
+  console.warn('[Connect.Me] Retention parsing failed: unsupported format', stringifyLogValue({
+    machineValue: normalized.machineValue,
+    displayLabel: normalized.displayLabel,
+    derivedFrom: normalized.derivedFrom,
+    fieldSnapshot: normalized.fieldSnapshot
+  }));
+  return null;
 }
 
 function validateRetentionParts(retentionUnit, retentionValue) {
@@ -477,7 +689,7 @@ export async function getPrivacySettings() {
     query: '?select=consent_granted,tracking_enabled,history_mode,retention_unit,retention_value,presence_sharing_enabled,invisible_mode_enabled&limit=1'
   });
   const normalized = normalizePrivacySettingsRow(rows?.[0]);
-  console.log('[Connect.Me] Loaded privacy settings from Supabase', { rows, normalized });
+  console.log('[Connect.Me] Loaded privacy settings from Supabase:', stringifyLogValue({ rows, normalized }));
   return normalized;
 }
 
@@ -502,7 +714,7 @@ export async function upsertPrivacySettings(privacy) {
     invisible_mode_enabled: Boolean(privacy.invisibleModeEnabled)
   };
 
-  console.log('[Connect.Me] Saving consent/privacy payload', payload);
+  console.log('[Connect.Me] Saving consent/privacy payload:', stringifyLogValue(payload));
 
   const rows = await restRequest('user_privacy_settings', {
     method: 'POST',
@@ -510,7 +722,7 @@ export async function upsertPrivacySettings(privacy) {
     body: payload
   });
 
-  console.log('[Connect.Me] Supabase privacy save response', rows);
+  console.log('[Connect.Me] Supabase privacy save response:', stringifyLogValue(rows));
 
   return normalizePrivacySettingsRow(rows?.[0] || payload);
 }

@@ -12,6 +12,7 @@ import {
   getProfile,
   getRetentionOptions,
   hasCompleteProfile,
+  normalizeRetentionSelection,
   parseRetentionSelection,
   readConfig,
   saveConfig,
@@ -34,8 +35,9 @@ const HISTORY_MODE_OPTIONS = [
 ];
 
 function createFormState(retentionSelection = '') {
+  const normalizedSelection = retentionSelection ? normalizeRetentionSelection(retentionSelection) : null;
   return {
-    retentionSelection,
+    retentionSelection: normalizedSelection?.machineValue || normalizedSelection?.displayLabel || '',
     parsedRetention: retentionSelection ? parseRetentionSelection(retentionSelection) : null,
     lastError: ''
   };
@@ -98,7 +100,7 @@ function setInlineValidation(message = '') {
 }
 
 function getRetentionSelectionFromSavedPrivacy(privacy = state.privacy) {
-  return `${privacy.retentionUnit}:${privacy.retentionValue}`;
+  return `${privacy.retentionValue}|${privacy.retentionUnit}`;
 }
 
 function computePresenceAvailability(privacy = state.privacy, profile = state.profile, user = state.user) {
@@ -140,20 +142,45 @@ function updatePresenceAvailability() {
   console.log('[Connect.Me] Presence availability updated', state.presenceAvailability);
 }
 
+function getRetentionSelectionSnapshot(select) {
+  const selectedOption = select?.selectedOptions?.[0] || null;
+  return {
+    value: select?.value ?? '',
+    label: selectedOption?.textContent?.trim() || '',
+    selected: selectedOption
+      ? {
+          value: selectedOption.value ?? select?.value ?? '',
+          label: selectedOption.textContent?.trim() || ''
+        }
+      : null
+  };
+}
+
+function formatRetentionSelectionForMessage(selection) {
+  const normalized = normalizeRetentionSelection(selection);
+  return normalized.displayLabel || normalized.machineValue || 'empty selection';
+}
+
 function syncFormState(source, selection, { clearValidation = false } = {}) {
+  const normalizedSelection = normalizeRetentionSelection(selection);
   const parsedRetention = parseRetentionSelection(selection);
   state.formState[source] = {
     ...state.formState[source],
-    retentionSelection: selection,
+    retentionSelection: normalizedSelection.machineValue || normalizedSelection.displayLabel || '',
     parsedRetention,
     lastError: parsedRetention ? '' : state.formState[source]?.lastError || ''
   };
 
   console.log('[Connect.Me] Retention form state synced', {
     source,
-    selection,
+    rawSelection: selection,
+    normalizedSelection,
     parsedRetention
   });
+
+  if (parsedRetention) {
+    setFormError(source, '');
+  }
 
   if (clearValidation && parsedRetention) {
     setInlineValidation('');
@@ -173,7 +200,7 @@ function populateSelect(select, options, selectedValue) {
   select.innerHTML = '';
   options.forEach((option) => {
     const el = document.createElement('option');
-    const value = option.value ?? `${option.unit}:${option.value}`;
+    const value = option.value ?? `${option.value}|${option.unit}`;
     el.value = value;
     el.textContent = option.label;
     el.selected = value === selectedValue;
@@ -511,11 +538,13 @@ function validateProfilePayload(profile) {
 }
 
 function buildPrivacyPayload(source) {
-  const retentionSelection = source === 'consent' ? els.consentRetention.value : els.retentionSelect.value;
+  const retentionSelection = source === 'consent'
+    ? getRetentionSelectionSnapshot(els.consentRetention)
+    : getRetentionSelectionSnapshot(els.retentionSelect);
   const retention = syncFormState(source, retentionSelection, { clearValidation: true });
 
   if (!retention) {
-    const message = `Unable to parse the selected retention window (${retentionSelection || 'empty selection'}). Please choose one of the supported values, such as 1 hour, 2 hours, 12 hours, 1 day, 30 days, 1 month, or 30 months.`;
+    const message = `Unable to parse the selected retention window (${formatRetentionSelectionForMessage(retentionSelection)}). Please choose one of the supported values, such as 1 hour, 2 hours, 12 hours, 1 day, 30 days, 1 month, or 30 months.`;
     setFormError(source, message);
     throw new Error(message);
   }
@@ -547,18 +576,25 @@ async function syncSavedPrivacyState(savedPrivacy, source) {
 async function savePrivacy(source) {
   const payload = buildPrivacyPayload(source);
   console.log('[Connect.Me] Attempting privacy save from popup', { source, payload });
-  const savedPrivacy = await upsertPrivacySettings(payload);
-  await syncSavedPrivacyState(savedPrivacy, source);
 
-  if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
-    chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
-  } else {
-    chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: source === 'consent' ? 'consent-saved' : 'privacy-updated' });
+  try {
+    const savedPrivacy = await upsertPrivacySettings(payload);
+    console.log('[Connect.Me] Privacy save succeeded', { source, savedPrivacy, payload });
+    await syncSavedPrivacyState(savedPrivacy, source);
+
+    if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE' });
+    } else {
+      chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: source === 'consent' ? 'consent-saved' : 'privacy-updated' });
+    }
+
+    setInlineValidation('');
+
+    return savedPrivacy;
+  } catch (error) {
+    console.error('[Connect.Me] Privacy save failed', { source, payload, error });
+    throw error;
   }
-
-  setInlineValidation('');
-
-  return savedPrivacy;
 }
 
 async function togglePresence(enabled) {
@@ -761,9 +797,10 @@ async function bindEvents() {
     ['settings', els.retentionSelect]
   ].forEach(([source, select]) => {
     select.addEventListener('change', () => {
-      const parsed = syncFormState(source, select.value, { clearValidation: true });
+      const selection = getRetentionSelectionSnapshot(select);
+      const parsed = syncFormState(source, selection, { clearValidation: true });
       if (!parsed) {
-        const message = `Unable to parse the selected retention window (${select.value || 'empty selection'}). Please choose a supported retention value.`;
+        const message = `Unable to parse the selected retention window (${formatRetentionSelectionForMessage(selection)}). Please choose a supported retention value.`;
         setInlineValidation(message);
         setFormError(source, message);
       }
@@ -818,9 +855,9 @@ async function initialize() {
   els.supabaseUrl.value = config.url || '';
   els.supabaseAnonKey.value = config.anonKey || '';
   populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, 'domain');
-  populateSelect(els.retentionSelect, getRetentionOptions(), 'days:7');
+  populateSelect(els.retentionSelect, getRetentionOptions(), '7|days');
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
-  populateSelect(els.consentRetention, getRetentionOptions(), 'days:7');
+  populateSelect(els.consentRetention, getRetentionOptions(), '7|days');
   await bindEvents();
   await refreshState();
 }
