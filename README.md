@@ -10,6 +10,7 @@ Connect.Me is a production-ready Chrome Extension built with Manifest V3 and Sup
 - **Presence sharing has a visible ON/OFF toggle** in the popup.
 - **Invisible Mode** lets people use the extension while remaining hidden from other users.
 - **Profiles must be completed before presence/community features are enabled.**
+- **Each public profile field now has an explicit Share / Not share control that persists in Supabase.**
 - **Connect.Me will NOT share user data with ANY third parties.**
 - **Permissions are minimized** to `storage`, `tabs`, `alarms`, and the built-in Supabase host permission required for this preconfigured build.
 
@@ -32,7 +33,16 @@ Profiles are required for community presence features and include:
 - Headline
 - Optional short bio
 
-If any required profile field or profile picture is missing, Connect.Me blocks presence sharing until the profile is completed.
+For the public user lists, each of these shareable fields can be marked **Share** or **Not share** individually:
+- profile picture
+- first name
+- last name
+- place of work
+- education
+- current location
+- bio
+
+If any required profile field or profile picture is missing, Connect.Me blocks presence sharing until the profile is completed. Users can still hide those fields from public presence lists after saving them.
 
 ### Consent and tracking controls
 - After login, the user sees a consent screen before any tracking begins.
@@ -57,6 +67,8 @@ The popup’s **Current Site** tab shows:
   - the profile is complete
   - presence sharing is enabled
   - Invisible Mode is off
+
+Public user cards only render the fields each member has chosen to share. Hidden avatars fall back to initials instead of exposing the uploaded image.
 
 ### Top Sites tab
 The popup’s **Top Sites** tab shows:
@@ -165,8 +177,9 @@ This build is preconfigured to use the Supabase project at `https://dhmtljnjygcq
 ### 3. Profile editing
 1. Reopen the popup.
 2. Edit one or more profile fields.
-3. Save again.
-4. Confirm the visible profile summary updates immediately.
+3. Set one or more visibility controls to **Share** or **Not share**.
+4. Save again.
+5. Confirm the visible profile summary updates immediately and that the popup shows a success message.
 
 ### 4. Consent saving
 1. Log in with a user who has not yet granted consent.

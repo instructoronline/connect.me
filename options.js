@@ -3,7 +3,8 @@ import {
   getPrivacySettings,
   getProfile,
   hasCompleteProfile,
-  ensureBuiltInConfig
+  ensureBuiltInConfig,
+  normalizeProfileVisibility
 } from './supabase.js';
 
 function $(id) {
@@ -51,6 +52,8 @@ function renderProfile(user, profile) {
     return;
   }
 
+  const visibility = normalizeProfileVisibility(profile);
+
   $('profileSummary').innerHTML = `
     <div class="summary-item"><strong>Signed in as:</strong> ${user.email}</div>
     <div class="summary-item"><strong>Name:</strong> ${profile.first_name} ${profile.last_name}</div>
@@ -58,6 +61,13 @@ function renderProfile(user, profile) {
     <div class="summary-item"><strong>Education:</strong> ${profile.education}</div>
     <div class="summary-item"><strong>Location:</strong> ${profile.current_location}</div>
     <div class="summary-item"><strong>Profile status:</strong> ${hasCompleteProfile(profile) ? 'Complete' : 'Incomplete'}</div>
+    <div class="summary-item"><strong>Public avatar:</strong> ${visibility.share_avatar ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public first name:</strong> ${visibility.share_first_name ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public last name:</strong> ${visibility.share_last_name ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public work:</strong> ${visibility.share_place_of_work ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public education:</strong> ${visibility.share_education ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public location:</strong> ${visibility.share_current_location ? 'Share' : 'Not share'}</div>
+    <div class="summary-item"><strong>Public bio:</strong> ${visibility.share_bio ? 'Share' : 'Not share'}</div>
   `;
 }
 

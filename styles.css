@@ -169,6 +169,39 @@ h3 {
   flex: 1;
 }
 
+.profile-field-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-alt);
+  padding: 12px;
+}
+
+.profile-field-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.field-label {
+  display: inline-flex;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.visibility-select {
+  min-width: 124px;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.visibility-select select {
+  padding: 8px 10px;
+  min-width: 124px;
+}
+
 label {
   display: flex;
   flex-direction: column;
@@ -316,6 +349,32 @@ textarea:disabled {
   background: var(--success-soft);
   color: var(--success);
   border-color: #b7e7ca;
+}
+
+.hidden-field-note {
+  font-style: italic;
+}
+
+.user-meta-list,
+.visibility-list {
+  display: grid;
+  gap: 8px;
+}
+
+.user-meta-list {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 600;
 }
 
 .callout.subtle {

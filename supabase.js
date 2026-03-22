@@ -19,6 +19,16 @@ const DEFAULT_PRIVACY_SETTINGS = {
   invisibleModeEnabled: false
 };
 
+export const PROFILE_VISIBILITY_FIELDS = Object.freeze({
+  share_avatar: true,
+  share_first_name: true,
+  share_last_name: true,
+  share_place_of_work: true,
+  share_education: true,
+  share_current_location: true,
+  share_bio: true
+});
+
 function isExtensionContext() {
   return typeof chrome !== 'undefined' && chrome?.storage?.local;
 }
@@ -585,6 +595,34 @@ async function restRequest(resource, { method = 'GET', query = '', body = null, 
   });
 }
 
+export function normalizeProfileVisibility(profile = {}) {
+  return Object.entries(PROFILE_VISIBILITY_FIELDS).reduce((acc, [key, defaultValue]) => {
+    acc[key] = profile[key] == null ? defaultValue : Boolean(profile[key]);
+    return acc;
+  }, {});
+}
+
+export function mergeProfileVisibility(profile = {}) {
+  return {
+    ...profile,
+    ...normalizeProfileVisibility(profile)
+  };
+}
+
+export function getPublicProfile(profile = {}) {
+  const merged = mergeProfileVisibility(profile);
+  return {
+    ...merged,
+    avatar_url: merged.share_avatar ? merged.avatar_url || '' : '',
+    first_name: merged.share_first_name ? merged.first_name || '' : '',
+    last_name: merged.share_last_name ? merged.last_name || '' : '',
+    place_of_work: merged.share_place_of_work ? merged.place_of_work || '' : '',
+    education: merged.share_education ? merged.education || '' : '',
+    current_location: merged.share_current_location ? merged.current_location || '' : '',
+    bio: merged.share_bio ? merged.bio || '' : ''
+  };
+}
+
 export function hasCompleteProfile(profile) {
   return Boolean(
     profile?.first_name &&
@@ -614,6 +652,7 @@ export async function saveUserMetadataProfileSnapshot(profile) {
     return;
   }
 
+  const visibility = normalizeProfileVisibility(profile);
   const safeProfile = {
     display_name: buildDisplayName(profile),
     first_name: profile.first_name,
@@ -623,7 +662,8 @@ export async function saveUserMetadataProfileSnapshot(profile) {
     education: profile.education,
     current_location: profile.current_location,
     headline: profile.headline,
-    bio: profile.bio
+    bio: profile.bio,
+    ...visibility
   };
 
   const config = await getConfig();
@@ -647,11 +687,11 @@ export async function getProfile() {
     throw new Error('Please sign in first.');
   }
 
-  const query = `?select=id,email,display_name,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,created_at,updated_at&id=eq.${encodeURIComponent(user.id)}&limit=1`;
+  const query = `?select=id,email,display_name,first_name,last_name,place_of_work,education,current_location,headline,bio,avatar_path,avatar_url,share_avatar,share_first_name,share_last_name,share_place_of_work,share_education,share_current_location,share_bio,created_at,updated_at&id=eq.${encodeURIComponent(user.id)}&limit=1`;
   const rows = await restRequest('profiles', {
     query
   });
-  const profile = rows?.[0] || null;
+  const profile = rows?.[0] ? mergeProfileVisibility(rows[0]) : null;
 
   console.log('[Connect.Me] Profile fetch result:', stringifyLogValue({
     userId: user.id,
@@ -668,6 +708,7 @@ export async function upsertProfile(profile) {
     throw new Error('Please sign in first.');
   }
 
+  const visibility = normalizeProfileVisibility(profile);
   const payload = {
     id: user.id,
     email: user.email,
@@ -680,7 +721,8 @@ export async function upsertProfile(profile) {
     headline: profile.headline || '',
     bio: profile.bio || '',
     avatar_path: profile.avatar_path || '',
-    avatar_url: profile.avatar_url || ''
+    avatar_url: profile.avatar_url || '',
+    ...visibility
   };
 
   console.log('[Connect.Me] Profile save payload:', stringifyLogValue(payload));
@@ -713,7 +755,7 @@ export async function upsertProfile(profile) {
     savedProfile
   }));
 
-  return savedProfile || payload;
+  return mergeProfileVisibility(savedProfile || payload);
 }
 
 export async function uploadProfileImage(file) {
@@ -927,11 +969,12 @@ export async function clearPresence() {
 }
 
 export async function fetchActiveUsersForDomain(domain) {
-  return restRequest('get_active_users_for_domain', {
+  const rows = await restRequest('get_active_users_for_domain', {
     method: 'POST',
     rpc: true,
     body: { requested_domain: domain }
   });
+  return (rows || []).map((row) => getPublicProfile(mergeProfileVisibility(row)));
 }
 
 export async function fetchTopSites() {
