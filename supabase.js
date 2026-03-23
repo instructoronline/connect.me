@@ -667,6 +667,14 @@ async function restRequest(resource, { method = 'GET', query = '', body = null, 
   });
 }
 
+async function publicRestRequest(resource, { method = 'GET', query = '', body = null, rpc = false, headers = {} } = {}) {
+  return supabaseFetch(`${rpc ? '/rest/v1/rpc/' : '/rest/v1/'}${resource}${query}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+}
+
 export function normalizeProfileVisibility(profile = {}) {
   return Object.entries(PROFILE_VISIBILITY_FIELDS).reduce((acc, [key, defaultValue]) => {
     acc[key] = profile[key] == null ? defaultValue : Boolean(profile[key]);
@@ -1239,6 +1247,77 @@ export async function fetchTopSites() {
 
 export async function fetchUsersOnTopSite(domain) {
   return fetchActiveUsersForDomain(domain);
+}
+
+export async function fetchLearningModules() {
+  const [modules, topics] = await Promise.all([
+    publicRestRequest('learning_modules', {
+      query: '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'
+    }),
+    publicRestRequest('learning_module_topics', {
+      query: '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc'
+    })
+  ]);
+
+  const topicsByModuleId = new Map();
+  (topics || []).forEach((topic) => {
+    const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
+    moduleTopics.push(topic);
+    topicsByModuleId.set(topic.module_id, moduleTopics);
+  });
+
+  return (modules || []).map((module) => ({
+    ...module,
+    topics: topicsByModuleId.get(module.id) || []
+  }));
+}
+
+export async function fetchLearningModuleConnectionsForCurrentUser() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return [];
+  }
+
+  return restRequest('learning_module_connections', {
+    query: `?select=id,module_id,user_id,connected_at&user_id=eq.${encodeURIComponent(user.id)}`
+  });
+}
+
+export async function connectCurrentUserToLearningModule(moduleId) {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error('Please sign in to connect yourself to a learning module.');
+  }
+
+  let rows = await restRequest('learning_module_connections', {
+    method: 'POST',
+    query: '?on_conflict=module_id,user_id',
+    headers: {
+      Prefer: 'resolution=ignore-duplicates,return=representation'
+    },
+    body: {
+      module_id: moduleId,
+      user_id: user.id
+    }
+  });
+
+  if (!rows?.length) {
+    rows = await restRequest('learning_module_connections', {
+      query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+    });
+  }
+
+  return rows?.[0] || null;
+}
+
+export async function fetchLearningModuleConnectedUsers(moduleSlug) {
+  return publicRestRequest('get_learning_module_connected_users', {
+    method: 'POST',
+    rpc: true,
+    body: {
+      requested_module_slug: moduleSlug
+    }
+  });
 }
 
 export async function deleteHistory() {

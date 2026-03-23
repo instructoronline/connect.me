@@ -60,6 +60,17 @@
               <span class="workspace-nav-icon" aria-hidden="true">◎</span>
               <span class="workspace-nav-label">Top Sites</span>
             </button>
+            <button type="button" class="workspace-nav-item" data-section="learningModulesTab">
+              <span class="workspace-nav-icon workspace-nav-icon-svg" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15.5a2.5 2.5 0 0 0-2.5-2.5H5z" />
+                  <path d="M5 5.5v13A2.5 2.5 0 0 0 7.5 21H19" />
+                  <path d="M8.5 7.5H15.5" />
+                  <path d="M8.5 11H15.5" />
+                </svg>
+              </span>
+              <span class="workspace-nav-label">Learning Modules</span>
+            </button>
             <button type="button" class="workspace-nav-item" data-section="settingsTab">
               <span class="workspace-nav-icon" aria-hidden="true">⚙</span>
               <span class="workspace-nav-label">Settings</span>
@@ -241,6 +252,21 @@
                   <div id="topSiteUsersList" class="list"></div>
                 </article>
               </div>
+            </article>
+          </section>
+
+          <section id="learningModulesTab" class="tab-panel workspace-section workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Learning workspace</p>
+                  <h2>Learning Modules</h2>
+                  <p class="muted">Browse foundational transformer modules, expand topics inline, and connect yourself to the modules you want to study.</p>
+                </div>
+                <span class="badge">Supabase synced</span>
+              </div>
+              <div class="callout subtle">Learning modules are visible to everyone in the workspace. Connecting a module requires sign-in and only exposes safe public-facing user identity details.</div>
+              <div id="learningModulesList" class="learning-modules-grid" aria-live="polite"></div>
             </article>
           </section>
 
