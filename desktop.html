@@ -9,12 +9,12 @@
   <body class="page-body desktop-body light-theme">
     <main class="dashboard-shell desktop-dashboard">
       <aside class="workspace-sidebar">
-        <section class="card soft-card workspace-brand-card">
+        <section class="workspace-brand-card soft-card">
           <div class="stack-md">
             <div>
               <p class="eyebrow">Connect.Me desktop workspace</p>
               <h1>Professional presence dashboard</h1>
-              <p class="subtitle">A persistent desktop workspace for current-site visibility, live shared users, profile editing, privacy controls, and top-site discovery.</p>
+              <p class="subtitle">A structured workspace for current-site visibility, live shared users, profile editing, privacy controls, and top-site discovery.</p>
             </div>
             <div class="hero-actions sidebar-hero-actions">
               <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
@@ -26,9 +26,9 @@
           </div>
         </section>
 
-        <section class="card workspace-status-card">
+        <section class="workspace-status-card">
           <p class="small-text muted">Current synchronized site</p>
-          <strong id="currentDomainBadge" class="sidebar-domain">No website detected</strong>
+          <strong id="currentDomainBadge" class="sidebar-domain break-anywhere">No website detected</strong>
           <p class="muted small-text">Owned by the background service worker and kept visible even while the popup is closed.</p>
         </section>
 
@@ -39,11 +39,11 @@
           <button class="tab-link" data-tab="privacyTab">Privacy</button>
         </nav>
 
-        <section class="card sidebar-note-card">
+        <section class="sidebar-note-card">
           <div class="stack-sm">
             <p class="eyebrow">Workspace focus</p>
-            <h3>Persistent academic dashboard</h3>
-            <p class="muted small-text">Use the main content area for site awareness and member discovery, while the right rail handles profile editing, consent, and configuration.</p>
+            <h3>Dashboard flow</h3>
+            <p class="muted small-text">Use the center column for current-site awareness and discovery while the right rail handles profile editing, consent, and controls.</p>
           </div>
         </section>
       </aside>
@@ -51,9 +51,27 @@
       <section class="workspace-main">
         <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
 
+        <section class="overview-metrics">
+          <article class="metric-card">
+            <span class="metric-label">Workspace mode</span>
+            <span class="metric-value">Desktop</span>
+            <span class="metric-subtitle">Persistent dashboard synced from the background worker</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Current site</span>
+            <span id="desktopDomainMetric" class="metric-value break-anywhere">No website detected</span>
+            <span class="metric-subtitle">Privacy-scoped URL detail updates in place</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Privacy model</span>
+            <span class="metric-value">Consent</span>
+            <span class="metric-subtitle">Tracking and presence only run when enabled by the user</span>
+          </article>
+        </section>
+
         <section class="desktop-overview-grid">
-          <section id="currentSiteTab" class="tab-panel active desktop-panel-span-two">
-            <article class="card stack-md workspace-card current-site-card desktop-panel-fill">
+          <section id="currentSiteTab" class="tab-panel active workspace-anchor-card">
+            <article class="workspace-card current-site-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
                   <p class="eyebrow">Live workspace</p>
@@ -75,7 +93,7 @@
               </section>
 
               <div class="desktop-current-site-grid">
-                <section class="stack-sm subpanel-card">
+                <section class="subpanel-card stack-sm">
                   <div class="section-heading compact">
                     <div>
                       <h3>Profile summary</h3>
@@ -85,7 +103,7 @@
                   <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
                 </section>
 
-                <section class="stack-sm subpanel-card">
+                <section class="subpanel-card stack-sm">
                   <div class="section-heading compact">
                     <div>
                       <h3>Presence controls</h3>
@@ -103,8 +121,8 @@
             </article>
           </section>
 
-          <section id="topSitesTab" class="tab-panel active desktop-panel-span-two">
-            <article class="card stack-md workspace-card desktop-panel-fill">
+          <section id="topSitesTab" class="tab-panel active workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
                   <p class="eyebrow">Discovery</p>
@@ -116,7 +134,7 @@
               <div class="callout subtle small-text">Top-site rankings remain domain-based, while user cards reveal additional path or full-URL detail only when those users have chosen to share it.</div>
               <div class="desktop-split-grid">
                 <div id="topSitesList" class="list"></div>
-                <article id="topSiteDetailCard" class="detail-card card hidden desktop-panel-fill">
+                <article id="topSiteDetailCard" class="detail-card hidden desktop-panel-fill top-sites-detail-grid">
                   <div class="section-heading compact">
                     <div>
                       <h3 id="topSiteDetailHeading">Site detail</h3>
@@ -133,201 +151,206 @@
       </section>
 
       <aside class="workspace-rail">
-        <section id="authPanel" class="card hidden workspace-card">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Authentication</p>
-              <h2>Sign in to begin</h2>
-              <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
+        <div class="workspace-rail-grid">
+          <section id="authPanel" class="workspace-card hidden">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Authentication</p>
+                <h2>Sign in to begin</h2>
+                <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
+              </div>
             </div>
-          </div>
-          <form id="authForm" class="stack-md">
-            <label>
-              Email address
-              <input id="authEmail" type="email" autocomplete="username" required />
-            </label>
-            <label>
-              Password
-              <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
-            </label>
-            <div class="button-row">
-              <button id="loginButton" type="submit">Log in</button>
-              <button id="signupButton" type="button" class="secondary">Sign up</button>
-            </div>
-          </form>
-        </section>
+            <form id="authForm" class="stack-md">
+              <label>
+                Email address
+                <input id="authEmail" type="email" autocomplete="username" required />
+              </label>
+              <label>
+                Password
+                <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+              </label>
+              <div class="button-row">
+                <button id="loginButton" type="submit">Log in</button>
+                <button id="signupButton" type="button" class="secondary">Sign up</button>
+              </div>
+            </form>
+          </section>
 
-        <section id="consentPanel" class="card hidden workspace-card">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Consent</p>
-              <h2>Consent required</h2>
-              <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
+          <section id="consentPanel" class="workspace-card hidden">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Consent</p>
+                <h2>Consent required</h2>
+                <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
+              </div>
             </div>
-          </div>
-          <form id="consentForm" class="stack-md">
-            <label>
-              History scope
-              <select id="consentHistoryMode"></select>
-            </label>
-            <label>
-              Retention window
-              <select id="consentRetention"></select>
-            </label>
-            <div class="checklist">
-              <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
-              <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
-              <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
-            </div>
-            <div class="callout info">Your data will not be shared with any third parties. You can change or revoke these settings at any time.</div>
-            <button type="submit">Save consent preferences</button>
-          </form>
-        </section>
+            <form id="consentForm" class="stack-md">
+              <label>
+                History scope
+                <select id="consentHistoryMode"></select>
+              </label>
+              <label>
+                Retention window
+                <select id="consentRetention"></select>
+              </label>
+              <div class="checklist stack-sm">
+                <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
+                <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
+                <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
+              </div>
+              <div class="callout info">Your data will not be shared with any third parties. You can change or revoke these settings at any time.</div>
+              <button type="submit">Save consent preferences</button>
+            </form>
+          </section>
 
-        <section id="profilePanel" class="card hidden workspace-card profile-editor-card">
-          <div class="section-heading align-start">
-            <div>
-              <p class="eyebrow">Profile workspace</p>
-              <h2>Profile editing</h2>
-              <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
+          <section id="profilePanel" class="workspace-card profile-editor-card hidden">
+            <div class="section-heading align-start">
+              <div>
+                <p class="eyebrow">Profile workspace</p>
+                <h2>Profile editing</h2>
+                <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
+              </div>
+              <button id="logoutButton" type="button" class="secondary small">Log out</button>
             </div>
-            <button id="logoutButton" type="button" class="secondary small">Log out</button>
-          </div>
-          <form id="profileForm" class="stack-md" enctype="multipart/form-data">
-            <div class="profile-edit-layout desktop-profile-layout">
-              <div class="avatar-column">
-                <div id="avatarPreview" class="avatar avatar-large">CM</div>
-                <div class="profile-field-card">
-                  <div class="profile-field-header">
-                    <label class="field-label" for="profileImage">Profile picture</label>
-                    <label class="visibility-select" for="shareAvatar">
-                      <span>Visibility</span>
-                      <select id="shareAvatar">
-                        <option value="true">Share</option>
-                        <option value="false">Not share</option>
-                      </select>
+            <form id="profileForm" class="stack-md" enctype="multipart/form-data">
+              <div class="profile-edit-layout desktop-profile-layout">
+                <div class="avatar-column">
+                  <div id="avatarPreview" class="avatar avatar-large">CM</div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="profileImage">Profile picture</label>
+                      <label class="visibility-select" for="shareAvatar">
+                        <span>Visibility</span>
+                        <select id="shareAvatar"><option value="true">Share</option><option value="false">Not share</option></select>
+                      </label>
+                    </div>
+                    <label class="file-input-label">
+                      Upload avatar
+                      <input id="profileImage" type="file" accept="image/*" />
                     </label>
+                    <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
                   </div>
-                  <label class="file-input-label">
-                    Upload avatar
-                    <input id="profileImage" type="file" accept="image/*" />
+                </div>
+                <div class="profile-fields stack-md">
+                  <div class="desktop-profile-grid">
+                    <div class="profile-field-card">
+                      <div class="profile-field-header">
+                        <label class="field-label" for="firstName">First name</label>
+                        <label class="visibility-select" for="shareFirstName"><span>Visibility</span><select id="shareFirstName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                      </div>
+                      <input id="firstName" type="text" maxlength="50" required />
+                    </div>
+                    <div class="profile-field-card">
+                      <div class="profile-field-header">
+                        <label class="field-label" for="lastName">Last name</label>
+                        <label class="visibility-select" for="shareLastName"><span>Visibility</span><select id="shareLastName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                      </div>
+                      <input id="lastName" type="text" maxlength="50" required />
+                    </div>
+                    <div class="profile-field-card">
+                      <div class="profile-field-header">
+                        <label class="field-label" for="placeOfWork">Place of work</label>
+                        <label class="visibility-select" for="sharePlaceOfWork"><span>Visibility</span><select id="sharePlaceOfWork"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                      </div>
+                      <input id="placeOfWork" type="text" maxlength="120" required />
+                    </div>
+                    <div class="profile-field-card">
+                      <div class="profile-field-header">
+                        <label class="field-label" for="education">Education</label>
+                        <label class="visibility-select" for="shareEducation"><span>Visibility</span><select id="shareEducation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                      </div>
+                      <input id="education" type="text" maxlength="120" required />
+                    </div>
+                    <div class="profile-field-card">
+                      <div class="profile-field-header">
+                        <label class="field-label" for="currentLocation">Current location</label>
+                        <label class="visibility-select" for="shareCurrentLocation"><span>Visibility</span><select id="shareCurrentLocation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                      </div>
+                      <input id="currentLocation" type="text" maxlength="120" required />
+                    </div>
+                    <div class="profile-field-card">
+                      <label class="field-label" for="headline">Professional headline</label>
+                      <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
+                    </div>
+                  </div>
+                  <div class="profile-field-card">
+                    <div class="profile-field-header">
+                      <label class="field-label" for="bio">Short bio</label>
+                      <label class="visibility-select" for="shareBio"><span>Visibility</span><select id="shareBio"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                    </div>
+                    <textarea id="bio" rows="4" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
+                  </div>
+                </div>
+              </div>
+              <button type="submit">Save profile</button>
+            </form>
+          </section>
+
+          <section id="settingsTab" class="tab-panel active workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Controls</p>
+                  <h2>Settings, consent, and visibility controls</h2>
+                  <p class="muted">Manage tracking scope, presence sharing, consent, and built-in configuration from the desktop workspace.</p>
+                </div>
+              </div>
+              <div class="stack-md">
+                <form id="privacySettingsForm" class="stack-md surface-card">
+                  <h3>Tracking and sharing</h3>
+                  <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
+                  <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
+                  <label>
+                    What history should be stored?
+                    <select id="historyMode"></select>
                   </label>
-                  <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
+                  <label>
+                    Retention period
+                    <select id="retentionSelect"></select>
+                  </label>
+                  <label class="checkbox-row"><input id="presenceSharingEnabled" type="checkbox" /> Presence sharing ON/OFF</label>
+                  <label class="checkbox-row"><input id="invisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
+                  <div id="privacyValidationMessage" class="callout subtle hidden"></div>
+                  <button type="submit">Save privacy settings</button>
+                </form>
+
+                <form id="configForm" class="stack-md surface-card">
+                  <h3>Built-in Supabase configuration</h3>
+                  <label>
+                    Supabase URL
+                    <input id="supabaseUrl" type="url" readonly aria-readonly="true" />
+                  </label>
+                  <label>
+                    Supabase anon key
+                    <textarea id="supabaseAnonKey" rows="4" readonly aria-readonly="true"></textarea>
+                  </label>
+                  <button type="submit" class="secondary">Reload built-in configuration</button>
+                </form>
+
+                <section class="surface-card stack-md">
+                  <h3>Data controls</h3>
+                  <div class="button-column">
+                    <button id="deleteHistoryButton" type="button" class="danger">Delete stored history</button>
+                    <button id="deleteAccountButton" type="button" class="danger ghost">Delete account data</button>
+                  </div>
+                </section>
+              </div>
+            </article>
+          </section>
+
+          <section id="privacyTab" class="tab-panel active workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Policy</p>
+                  <h2>Privacy policy</h2>
+                  <p class="muted">Review how Connect.Me handles retention, consent, visibility scope, and user controls.</p>
                 </div>
               </div>
-              <div class="profile-fields stack-md">
-                <div class="desktop-profile-grid">
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="firstName">First name</label>
-                      <label class="visibility-select" for="shareFirstName"><span>Visibility</span><select id="shareFirstName"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <input id="firstName" type="text" maxlength="50" required />
-                  </div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="lastName">Last name</label>
-                      <label class="visibility-select" for="shareLastName"><span>Visibility</span><select id="shareLastName"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <input id="lastName" type="text" maxlength="50" required />
-                  </div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="placeOfWork">Place of work</label>
-                      <label class="visibility-select" for="sharePlaceOfWork"><span>Visibility</span><select id="sharePlaceOfWork"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <input id="placeOfWork" type="text" maxlength="120" required />
-                  </div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="education">Education</label>
-                      <label class="visibility-select" for="shareEducation"><span>Visibility</span><select id="shareEducation"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <input id="education" type="text" maxlength="120" required />
-                  </div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="currentLocation">Current location</label>
-                      <label class="visibility-select" for="shareCurrentLocation"><span>Visibility</span><select id="shareCurrentLocation"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <input id="currentLocation" type="text" maxlength="120" required />
-                  </div>
-                  <div class="profile-field-card">
-                    <label class="field-label" for="headline">Professional headline</label>
-                    <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
-                  </div>
-                </div>
-                <div class="profile-field-card">
-                  <div class="profile-field-header">
-                    <label class="field-label" for="bio">Short bio</label>
-                    <label class="visibility-select" for="shareBio"><span>Visibility</span><select id="shareBio"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                  </div>
-                  <textarea id="bio" rows="4" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
-                </div>
-              </div>
-            </div>
-            <button type="submit">Save profile</button>
-          </form>
-        </section>
-
-        <section id="settingsTab" class="tab-panel active workspace-card">
-          <article class="card stack-md desktop-panel-fill">
-            <div class="section-heading dashboard-section-heading">
-              <div>
-                <p class="eyebrow">Controls</p>
-                <h2>Settings, consent, and visibility controls</h2>
-                <p class="muted">Manage tracking scope, presence sharing, consent, and built-in configuration from the desktop workspace.</p>
-              </div>
-            </div>
-            <form id="privacySettingsForm" class="stack-md">
-              <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
-              <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
-              <label>
-                What history should be stored?
-                <select id="historyMode"></select>
-              </label>
-              <label>
-                Retention period
-                <select id="retentionSelect"></select>
-              </label>
-              <label class="checkbox-row"><input id="presenceSharingEnabled" type="checkbox" /> Presence sharing ON/OFF</label>
-              <label class="checkbox-row"><input id="invisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
-              <div id="privacyValidationMessage" class="callout subtle hidden"></div>
-              <button type="submit">Save privacy settings</button>
-            </form>
-
-            <form id="configForm" class="stack-md top-divider">
-              <h3>Built-in Supabase configuration</h3>
-              <label>
-                Supabase URL
-                <input id="supabaseUrl" type="url" readonly aria-readonly="true" />
-              </label>
-              <label>
-                Supabase anon key
-                <textarea id="supabaseAnonKey" rows="4" readonly aria-readonly="true"></textarea>
-              </label>
-              <button type="submit" class="secondary">Reload built-in configuration</button>
-            </form>
-
-            <div class="button-row">
-              <button id="deleteHistoryButton" type="button" class="danger">Delete stored history</button>
-              <button id="deleteAccountButton" type="button" class="danger ghost">Delete account data</button>
-            </div>
-          </article>
-        </section>
-
-        <section id="privacyTab" class="tab-panel active workspace-card">
-          <article class="card stack-md desktop-panel-fill">
-            <div class="section-heading dashboard-section-heading">
-              <div>
-                <p class="eyebrow">Policy</p>
-                <h2>Privacy policy</h2>
-                <p class="muted">Review how Connect.Me handles retention, consent, visibility scope, and user controls.</p>
-              </div>
-            </div>
-            <div id="privacyPolicyContent" class="privacy-copy"></div>
-          </article>
-        </section>
+              <div id="privacyPolicyContent" class="privacy-copy"></div>
+            </article>
+          </section>
+        </div>
       </aside>
     </main>
 

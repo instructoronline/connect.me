@@ -74,7 +74,19 @@ const state = {
   activeUsersRequestId: 0,
   topSitesRequestId: 0,
   detailUsersRequestId: 0,
-  contextRefreshId: null
+  contextRefreshId: null,
+  refreshTimerId: null,
+  refreshPromise: null,
+  refreshQueuedReason: null,
+  caches: {
+    activeUsers: new Map(),
+    topSites: { data: null, fetchedAt: 0 },
+    detailUsers: new Map()
+  },
+  lastRenderedDomain: '',
+  lastTopSitesSignature: '',
+  lastPresenceSignature: '',
+  lastProfileSummarySignature: ''
 };
 
 const els = {};
@@ -83,7 +95,14 @@ const ACTIVE_CONTEXT_STORAGE_KEY = 'connectme-active-context';
 const CONTEXT_FALLBACK_REFRESH_MS = isDesktopWorkspace ? 12000 : 15000;
 const WORKSPACE_LABEL = isDesktopWorkspace ? 'Desktop' : 'Popup';
 
-const SHARED_CARD_DEBUG_ENABLED = true;
+const SHARED_CARD_DEBUG_ENABLED = false;
+const FETCH_TTL_MS = {
+  activeUsers: 12000,
+  topSites: 18000,
+  detailUsers: 12000
+};
+const REFRESH_DEBOUNCE_MS = 120;
+const POLL_INTERVAL_MS = isDesktopWorkspace ? 45000 : 60000;
 
 
 function $(id) {
@@ -546,7 +565,13 @@ function renderProfileSummary() {
 }
 
 function renderDomainBadge() {
-  els.currentDomainBadge.textContent = state.tabInfo?.domain || 'No website detected';
+  const domain = state.tabInfo?.domain || 'No website detected';
+  if (els.currentDomainBadge) {
+    els.currentDomainBadge.textContent = domain;
+  }
+  if (els.desktopDomainMetric) {
+    els.desktopDomainMetric.textContent = domain;
+  }
 }
 
 function renderPresenceControls() {
@@ -622,7 +647,6 @@ function renderTopSites() {
 
 function renderUserCard(user) {
   const rawPayload = user?.__sharedCardDebug || null;
-  logStructured('log', '[Connect.Me] Raw fetched shared-user payload', rawPayload || user);
 
   const visibility = normalizeProfileVisibility(user || {});
   const publicUser = getPublicProfile(user);
@@ -695,32 +719,6 @@ function renderUserCard(user) {
     ? `<div class="muted">${escapeHtml(subtitleText)}</div>`
     : (!hasSharedNonFallbackText ? '<div class="muted">Connect.Me member</div>' : '');
 
-  logStructured('log', '[Connect.Me] Share flags for shared-user card', {
-    userId: publicUser.id,
-    shareFlags: visibility
-  });
-  logStructured('log', '[Connect.Me] Resolved avatar URL for shared-user card', {
-    userId: publicUser.id,
-    avatar_path: sharedFields.avatar_path,
-    avatar_url: sharedFields.avatar_url
-  });
-  logStructured('log', '[Connect.Me] Final rendered field set for shared-user card', {
-    userId: publicUser.id,
-    sharedFieldCount,
-    renderedFieldKeys,
-    renderedFields: {
-      title: titleText,
-      subtitle: subtitleText,
-      professional_headline: sharedFields.professional_headline,
-      place_of_work: sharedFields.place_of_work,
-      education: sharedFields.education,
-      current_location: sharedFields.current_location,
-      bio: sharedFields.bio,
-      avatar_url: sharedFields.avatar_url,
-      limited_profile_note: sharedFieldCount <= 2
-    }
-  });
-
   return `
     <div class="user-card">
       <div class="user-row">
@@ -736,7 +734,7 @@ function renderUserCard(user) {
   `;
 }
 
-async function openTopSiteDetail(domain) {
+async function openTopSiteDetail(domain, { force = false } = {}) {
   state.detailDomain = domain;
   const requestId = ++state.detailUsersRequestId;
   els.topSiteDetailHeading.textContent = `Users on ${domain}`;
@@ -744,10 +742,13 @@ async function openTopSiteDetail(domain) {
     els.topSiteDetailSubheading.textContent = UI_TEXT.topSiteDetailSubheading;
   }
   els.topSiteDetailCard.classList.remove('hidden');
-  els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
+  const cachedUsers = !force ? getCacheEntry(state.caches.detailUsers, domain, FETCH_TTL_MS.detailUsers) : null;
+  if (!cachedUsers) {
+    els.topSiteUsersList.innerHTML = '<div class="empty-state">Loading users…</div>';
+  }
 
   try {
-    const users = await fetchUsersOnTopSite(domain);
+    const users = cachedUsers || await getCachedActiveUsers(domain, { force, detail: true });
     if (requestId !== state.detailUsersRequestId || state.detailDomain !== domain) {
       return;
     }
@@ -764,7 +765,7 @@ async function openTopSiteDetail(domain) {
   }
 }
 
-async function renderActiveUsers({ refreshVersion = state.refreshVersion } = {}) {
+async function renderActiveUsers({ refreshVersion = state.refreshVersion, force = false } = {}) {
   updatePresenceAvailability();
   const requestId = ++state.activeUsersRequestId;
 
@@ -793,10 +794,13 @@ async function renderActiveUsers({ refreshVersion = state.refreshVersion } = {})
     return;
   }
 
-  els.activeUsersList.innerHTML = '<div class="empty-state">Refreshing live members…</div>';
+  const cachedUsers = !force ? getCacheEntry(state.caches.activeUsers, state.tabInfo.domain, FETCH_TTL_MS.activeUsers) : null;
+  if (!cachedUsers) {
+    els.activeUsersList.innerHTML = '<div class="empty-state">Refreshing live members…</div>';
+  }
 
   try {
-    const users = await fetchActiveUsersForDomain(state.tabInfo.domain);
+    const users = cachedUsers || await getCachedActiveUsers(state.tabInfo.domain, { force });
     if (requestId !== state.activeUsersRequestId || isStaleRefresh(refreshVersion)) {
       return;
     }
@@ -831,7 +835,7 @@ function switchTab(tabId) {
   }
 }
 
-async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshVersion } = {}) {
+async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshVersion, force = false } = {}) {
   logStructured('log', '[Connect.Me] Top-sites refresh trigger', { reason, detailDomain: state.detailDomain });
   const requestId = ++state.topSitesRequestId;
 
@@ -845,8 +849,12 @@ async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshV
     return;
   }
 
+  const cachedTopSites = !force && state.caches.topSites.data && (Date.now() - state.caches.topSites.fetchedAt) <= FETCH_TTL_MS.topSites
+    ? state.caches.topSites.data
+    : null;
+
   try {
-    state.topSites = await fetchTopSites();
+    state.topSites = cachedTopSites || await getCachedTopSites(force);
   } catch (_error) {
     if (requestId !== state.topSitesRequestId || isStaleRefresh(refreshVersion)) {
       return;
@@ -864,7 +872,7 @@ async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshV
   if (state.detailDomain) {
     const exists = state.topSites.some((site) => site.domain === state.detailDomain);
     if (exists) {
-      await openTopSiteDetail(state.detailDomain);
+      await openTopSiteDetail(state.detailDomain, { force });
     } else {
       state.detailDomain = null;
       els.topSiteDetailCard.classList.add('hidden');
@@ -872,9 +880,13 @@ async function loadTopSites({ reason = 'manual', refreshVersion = state.refreshV
   }
 }
 
-async function refreshState({ reason = 'manual' } = {}) {
+async function refreshState({ reason = 'manual', force = false } = {}) {
   const refreshVersion = bumpRefreshVersion();
-  state.tabInfo = await getCurrentTabInfo();
+  if (force || !state.tabInfo) {
+    state.tabInfo = await getCurrentTabInfo();
+  } else {
+    state.tabInfo = await getCurrentTabInfo();
+  }
   renderDomainBadge();
 
   state.user = await getCachedUser();
@@ -917,9 +929,27 @@ async function refreshState({ reason = 'manual' } = {}) {
   renderPrivacySettingsForm();
   renderPresenceControls();
   renderCurrentSiteUrlSummary();
-  renderPrivacyTab();
-  await renderActiveUsers({ refreshVersion });
-  await loadTopSites({ reason, refreshVersion });
+  await renderActiveUsers({ refreshVersion, force });
+  await loadTopSites({ reason, refreshVersion, force });
+}
+
+async function refreshContextState({ reason = 'context-sync', force = false } = {}) {
+  const refreshVersion = bumpRefreshVersion();
+  const previousDomain = state.tabInfo?.domain || '';
+  state.tabInfo = await getCurrentTabInfo();
+  const nextDomain = state.tabInfo?.domain || '';
+  if (force || previousDomain !== nextDomain) {
+    invalidatePresenceCaches(previousDomain);
+    invalidatePresenceCaches(nextDomain);
+  }
+  renderDomainBadge();
+  renderCurrentSiteUrlSummary();
+  renderTopSites();
+  await renderActiveUsers({ refreshVersion, force: force || previousDomain !== nextDomain });
+  if (state.detailDomain && (force || state.detailDomain === nextDomain || previousDomain !== nextDomain)) {
+    await openTopSiteDetail(state.detailDomain, { force });
+  }
+  await loadTopSites({ reason, refreshVersion, force });
 }
 
 function buildProfilePayload() {
@@ -988,7 +1018,7 @@ function buildPrivacyPayload(source) {
 
 async function syncSavedPrivacyState(savedPrivacy, source) {
   state.privacy = savedPrivacy || getDefaultPrivacySettings();
-  state.hasSavedPrivacySettings = Boolean(savedPrivacy);
+  state.hasSavedPrivacySettings = Boolean(savedPrivacy && savedPrivacy.consentGranted);
   const refreshVersion = bumpRefreshVersion();
   logStructured('log', '[Connect.Me] Applying saved privacy state to popup', {
     source,
@@ -1014,7 +1044,7 @@ async function savePrivacy(source) {
   try {
     const savedPrivacy = await upsertPrivacySettings(payload);
     logStructured('log', '[Connect.Me] Privacy save succeeded', { source, savedPrivacy, payload });
-    await refreshState({ reason: `${source}-saved` });
+    invalidatePresenceCaches();
     await syncSavedPrivacyState(savedPrivacy, source);
 
     if (!savedPrivacy.presenceSharingEnabled || savedPrivacy.invisibleModeEnabled) {
@@ -1099,7 +1129,8 @@ async function handleProfileSubmit(event) {
     await saveUserMetadataProfileSnapshot(savedProfile);
     state.pendingAvatar = null;
     els.profileImage.value = '';
-    await refreshState({ reason: 'profile-updated' });
+    invalidatePresenceCaches();
+    await refreshState({ reason: 'profile-updated', force: true });
     const successMessage = hasCompleteProfile(state.profile)
       ? 'Profile and visibility settings saved successfully.'
       : 'Profile and visibility settings saved successfully. Add a profile photo and any remaining required details to enable presence.';
@@ -1109,6 +1140,83 @@ async function handleProfileSubmit(event) {
   } catch (error) {
     setStatus(error.message, 'error');
   }
+}
+
+function getCacheEntry(map, key, ttl) {
+  const entry = map.get(key);
+  if (!entry) {
+    return null;
+  }
+  if ((Date.now() - entry.fetchedAt) > ttl) {
+    map.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCacheEntry(map, key, data) {
+  map.set(key, { data, fetchedAt: Date.now() });
+  return data;
+}
+
+function invalidatePresenceCaches(domain = state.tabInfo?.domain || state.detailDomain) {
+  if (domain) {
+    state.caches.activeUsers.delete(domain);
+    state.caches.detailUsers.delete(domain);
+  }
+  state.caches.topSites.fetchedAt = 0;
+}
+
+async function getCachedTopSites(force = false) {
+  if (!force && state.caches.topSites.data && (Date.now() - state.caches.topSites.fetchedAt) <= FETCH_TTL_MS.topSites) {
+    return state.caches.topSites.data;
+  }
+  const data = await fetchTopSites();
+  state.caches.topSites = { data, fetchedAt: Date.now() };
+  return data;
+}
+
+async function getCachedActiveUsers(domain, { force = false, detail = false } = {}) {
+  const cache = detail ? state.caches.detailUsers : state.caches.activeUsers;
+  if (!force) {
+    const cached = getCacheEntry(cache, domain, detail ? FETCH_TTL_MS.detailUsers : FETCH_TTL_MS.activeUsers);
+    if (cached) {
+      return cached;
+    }
+  }
+  const users = await fetchActiveUsersForDomain(domain);
+  setCacheEntry(cache, domain, users);
+  if (detail) {
+    setCacheEntry(state.caches.activeUsers, domain, users);
+  }
+  return users;
+}
+
+function scheduleRefresh({ reason = 'scheduled', scope = 'full', force = false } = {}) {
+  if (scope === 'context' && state.refreshQueuedReason === 'full') {
+    return state.refreshPromise || Promise.resolve();
+  }
+  state.refreshQueuedReason = force || scope === 'full' ? 'full' : (state.refreshQueuedReason || scope);
+  if (state.refreshTimerId) {
+    clearTimeout(state.refreshTimerId);
+  }
+  state.refreshPromise = new Promise((resolve) => {
+    state.refreshTimerId = window.setTimeout(async () => {
+      const queuedScope = state.refreshQueuedReason === 'full' ? 'full' : state.refreshQueuedReason || scope;
+      state.refreshTimerId = null;
+      state.refreshQueuedReason = null;
+      try {
+        if (queuedScope === 'context') {
+          await refreshContextState({ reason, force });
+        } else {
+          await refreshState({ reason, force });
+        }
+      } finally {
+        resolve();
+      }
+    }, REFRESH_DEBOUNCE_MS);
+  });
+  return state.refreshPromise;
 }
 
 function stopTopSitesPolling() {
@@ -1121,16 +1229,20 @@ function stopTopSitesPolling() {
 function startTopSitesPolling() {
   stopTopSitesPolling();
   state.topSitesPollId = window.setInterval(() => {
-    loadTopSites({ reason: 'popup-poll', refreshVersion: state.refreshVersion }).catch((error) => {
+    if (document.hidden || !state.user) {
+      return;
+    }
+    invalidatePresenceCaches();
+    loadTopSites({ reason: isDesktopWorkspace ? 'desktop-poll' : 'popup-poll', refreshVersion: state.refreshVersion, force: true }).catch((error) => {
       logStructured('warn', '[Connect.Me] Top-sites polling failed', { message: error.message });
     });
-  }, 30000);
+  }, POLL_INTERVAL_MS);
 }
 
 function handleRuntimeMessage(message) {
   if (message?.type === 'ACTIVE_CONTEXT_CHANGED') {
     logStructured('log', `[Connect.Me] ${WORKSPACE_LABEL} current-site event`, message);
-    refreshState({ reason: message.reason || 'background-event' }).catch((error) => {
+    scheduleRefresh({ reason: message.reason || 'background-event', scope: 'context', force: true }).catch((error) => {
       logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} refresh failed`, { reason: message.reason, message: error.message });
     });
     return;
@@ -1138,7 +1250,8 @@ function handleRuntimeMessage(message) {
 
   if (message?.type === 'TOP_SITES_REFRESH_REQUESTED') {
     logStructured('log', '[Connect.Me] Top-sites refresh trigger', message);
-    loadTopSites({ reason: message.reason || 'background-request', refreshVersion: state.refreshVersion }).catch((error) => {
+    invalidatePresenceCaches();
+    loadTopSites({ reason: message.reason || 'background-request', refreshVersion: state.refreshVersion, force: true }).catch((error) => {
       logStructured('error', '[Connect.Me] Top-sites refresh failed', { reason: message.reason, message: error.message });
     });
   }
@@ -1154,7 +1267,7 @@ function handleStorageChange(changes, areaName) {
     newValue: changes[ACTIVE_CONTEXT_STORAGE_KEY].newValue || null
   });
 
-  refreshState({ reason: isDesktopWorkspace ? 'desktop-storage-sync' : 'popup-storage-sync' }).catch((error) => {
+  scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-storage-sync' : 'popup-storage-sync', scope: 'context', force: true }).catch((error) => {
     logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} storage sync failed`, { message: error.message });
   });
 }
@@ -1163,19 +1276,19 @@ function bindRuntimeListeners() {
   chrome.runtime.onMessage.addListener(handleRuntimeMessage);
   chrome.storage.onChanged.addListener(handleStorageChange);
   window.addEventListener('focus', () => {
-    refreshState({ reason: isDesktopWorkspace ? 'desktop-focus' : 'popup-focus' }).catch((error) => {
+    scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-focus' : 'popup-focus' }).catch((error) => {
       logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} focus refresh failed`, { message: error.message });
     });
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      refreshState({ reason: isDesktopWorkspace ? 'desktop-visible' : 'popup-visible' }).catch((error) => {
+      scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-visible' : 'popup-visible' }).catch((error) => {
         logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} visibility refresh failed`, { message: error.message });
       });
     }
   });
   state.contextRefreshId = window.setInterval(() => {
-    refreshState({ reason: isDesktopWorkspace ? 'desktop-fallback-refresh' : 'popup-fallback-refresh' }).catch((error) => {
+    scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-fallback-refresh' : 'popup-fallback-refresh', scope: 'context' }).catch((error) => {
       logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} fallback refresh missed`, { message: error.message });
     });
   }, CONTEXT_FALLBACK_REFRESH_MS);
@@ -1190,7 +1303,7 @@ function bindRuntimeListeners() {
 
 function bindElements() {
   [
-    'statusBanner', 'authPanel', 'authForm', 'authEmail', 'authPassword', 'signupButton', 'consentPanel', 'consentForm',
+    'statusBanner', 'desktopDomainMetric', 'authPanel', 'authForm', 'authEmail', 'authPassword', 'signupButton', 'consentPanel', 'consentForm',
     'consentHistoryMode', 'consentRetention', 'consentTrackingEnabled', 'consentPresenceEnabled', 'consentInvisibleMode',
     'profilePanel', 'profileForm', 'profilePrompt', 'logoutButton', 'avatarPreview', 'profileImage', 'shareAvatar', 'firstName', 'lastName',
     'shareFirstName', 'shareLastName', 'placeOfWork', 'sharePlaceOfWork', 'education', 'shareEducation', 'currentLocation',
@@ -1234,7 +1347,8 @@ async function bindEvents() {
     setStatus('Logging in…');
     try {
       await signIn(els.authEmail.value.trim(), els.authPassword.value);
-      await refreshState({ reason: 'login' });
+      invalidatePresenceCaches();
+      await refreshState({ reason: 'login', force: true });
       chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: 'login' });
       setStatus('Logged in successfully', 'success');
     } catch (error) {
@@ -1246,7 +1360,7 @@ async function bindEvents() {
     setStatus('Creating account…');
     try {
       await signUp(els.authEmail.value.trim(), els.authPassword.value);
-      await refreshState({ reason: 'signup' });
+      await refreshState({ reason: 'signup', force: true });
       setStatus('Account created successfully. Check your email if confirmation is enabled.', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
@@ -1259,7 +1373,8 @@ async function bindEvents() {
       await signOut();
       state.profile = null;
       state.user = null;
-      await refreshState({ reason: 'logout' });
+      invalidatePresenceCaches();
+      await refreshState({ reason: 'logout', force: true });
       chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'logout' });
       setStatus('Logged out successfully', 'success');
     } catch (error) {
@@ -1373,7 +1488,8 @@ async function bindEvents() {
     try {
       await deleteAccountData();
       await signOut();
-      await refreshState({ reason: 'account-deleted' });
+      invalidatePresenceCaches();
+      await refreshState({ reason: 'account-deleted', force: true });
       chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'account-deleted' });
       setStatus('Account data deleted successfully', 'success');
     } catch (error) {
@@ -1383,7 +1499,8 @@ async function bindEvents() {
 
   els.refreshTopSites.addEventListener('click', async () => {
     setStatus('Refreshing top sites…');
-    await loadTopSites({ reason: 'manual-refresh', refreshVersion: state.refreshVersion });
+    invalidatePresenceCaches();
+    await loadTopSites({ reason: 'manual-refresh', refreshVersion: state.refreshVersion, force: true });
     setStatus('Top sites refreshed', 'success');
   });
 
@@ -1411,7 +1528,7 @@ async function initialize() {
   if (isDesktopWorkspace) {
     document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.add('active'));
   }
-  await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened' });
+  await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened', force: true });
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
 
