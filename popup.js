@@ -1,12 +1,16 @@
 import {
   buildScopedSiteContext,
   clearPresence,
+  connectCurrentUserToLearningModule,
   deleteAccountData,
   deleteHistory,
   ensureBuiltInConfig,
   ensureValidSession,
   extractTabInfo,
   fetchActiveUsersForDomain,
+  fetchLearningModuleConnectedUsers,
+  fetchLearningModuleConnectionsForCurrentUser,
+  fetchLearningModules,
   fetchTopSites,
   fetchUsersOnTopSite,
   getCachedUser,
@@ -78,6 +82,16 @@ const state = {
   profile: null,
   privacy: getDefaultPrivacySettings(),
   hasSavedPrivacySettings: false,
+  learningModules: [],
+  learningModulesLoading: false,
+  learningModulesError: '',
+  expandedLearningModules: new Set(),
+  expandedLearningModuleUsers: new Set(),
+  moduleConnectionIds: new Set(),
+  pendingModuleConnectionIds: new Set(),
+  learningModuleUsersBySlug: new Map(),
+  learningModuleUsersLoading: new Set(),
+  learningModuleUsersErrors: new Map(),
   formState: {
     consent: createFormState(),
     settings: createFormState(),
@@ -318,6 +332,42 @@ function escapeHtml(value = '') {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function renderChevronIcon() {
+  return `
+    <svg viewBox="0 0 20 20" focusable="false" aria-hidden="true">
+      <path d="M5.5 7.5 10 12l4.5-4.5" />
+    </svg>
+  `;
+}
+
+function renderConnectionIcon() {
+  return `
+    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+      <path d="M8.5 8.5h-1a4.5 4.5 0 0 0 0 9h3" />
+      <path d="M15.5 8.5h1a4.5 4.5 0 1 1 0 9h-3" />
+      <path d="M9 12h6" />
+      <path d="m10 9 2 3-2 3" />
+      <path d="m14 9-2 3 2 3" />
+    </svg>
+  `;
+}
+
+function renderModuleUserAvatar(user = {}) {
+  if (user?.avatar_url) {
+    return `<img class="avatar avatar-small" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.public_name || 'Connected user')} avatar" />`;
+  }
+
+  const initials = String(user?.public_name || 'Connect.Me member')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0] || '')
+    .join('')
+    .toUpperCase() || 'CM';
+
+  return `<div class="avatar avatar-small">${escapeHtml(initials)}</div>`;
 }
 
 function setStatus(message, type = 'info') {
@@ -853,6 +903,9 @@ function renderSupabaseConfiguration() {
     buildInfoTile('active_presence', 'Configured', 'Used for live presence / active session style tracking.'),
     buildInfoTile('browsing_history', 'Configured', 'Stores history according to consent and retention settings.'),
     buildInfoTile('user_privacy_settings', 'Configured', 'Acts as the consent and privacy settings record.'),
+    buildInfoTile('learning_modules', 'Configured', 'Stores seeded learning-module metadata.'),
+    buildInfoTile('learning_module_topics', 'Configured', 'Stores ordered topics for each learning module.'),
+    buildInfoTile('learning_module_connections', 'Configured', 'Stores user-to-module assignments with duplicate prevention.'),
     buildInfoTile('top_active_sites', 'Derived view', 'Aggregates currently active domains.'),
     buildInfoTile('shared_sites / site_visibility', 'Not in current build', 'No separate shared-sites table is defined in the shipped schema.')
   ].join('');
@@ -954,10 +1007,249 @@ function renderDataControlsSection() {
   ].join('');
 }
 
+function renderLearningModuleUsers(module) {
+  const isUsersOpen = state.expandedLearningModuleUsers.has(module.slug);
+  const isUsersLoading = state.learningModuleUsersLoading.has(module.slug);
+  const usersError = state.learningModuleUsersErrors.get(module.slug) || '';
+  const connectedUsers = state.learningModuleUsersBySlug.get(module.slug) || [];
+
+  let content = '<div class="empty-state">Expand this area to view connected users.</div>';
+  if (isUsersOpen && isUsersLoading) {
+    content = '<div class="empty-state">Loading connected users…</div>';
+  } else if (isUsersOpen && usersError) {
+    content = `<div class="empty-state">${escapeHtml(usersError)}</div>`;
+  } else if (isUsersOpen) {
+    content = connectedUsers.length
+      ? `
+        <div class="learning-module-users-list">
+          ${connectedUsers.map((user) => `
+            <div class="learning-module-user-row">
+              <div class="user-row">
+                ${renderModuleUserAvatar(user)}
+                <div class="stack-xs">
+                  <strong>${escapeHtml(user.public_name || 'Connect.Me member')}</strong>
+                  <span class="muted small-text">Connected ${escapeHtml(new Date(user.connected_at).toLocaleString())}</span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `
+      : '<div class="empty-state">No users connected yet.</div>';
+  }
+
+  return `
+    <div class="learning-module-collapsible ${isUsersOpen ? 'is-open' : ''}">
+      <div class="learning-module-collapsible-inner">
+        <div class="learning-module-section-block learning-module-users-panel stack-sm">
+          <div class="section-heading compact">
+            <div>
+              <h3>Connected users</h3>
+              <p class="muted small-text">Only safe public-facing identity details are shown here.</p>
+            </div>
+            <span class="pill ${connectedUsers.length ? 'success' : ''}">${escapeHtml(String(connectedUsers.length))} connected</span>
+          </div>
+          ${content}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLearningModulesSection() {
+  if (!isDesktopWorkspace || !els.learningModulesList) {
+    return;
+  }
+
+  if (state.learningModulesLoading && !state.learningModules.length) {
+    els.learningModulesList.innerHTML = '<div class="empty-state">Loading learning modules…</div>';
+    return;
+  }
+
+  if (state.learningModulesError && !state.learningModules.length) {
+    els.learningModulesList.innerHTML = `<div class="empty-state">${escapeHtml(state.learningModulesError)}</div>`;
+    return;
+  }
+
+  if (!state.learningModules.length) {
+    els.learningModulesList.innerHTML = '<div class="empty-state">No learning modules are available yet.</div>';
+    return;
+  }
+
+  els.learningModulesList.innerHTML = state.learningModules.map((module) => {
+    const isExpanded = state.expandedLearningModules.has(module.id);
+    const isConnected = state.moduleConnectionIds.has(module.id);
+    const isConnecting = state.pendingModuleConnectionIds.has(module.id);
+    const topics = Array.isArray(module.topics) ? module.topics : [];
+    const userToggleLabel = state.expandedLearningModuleUsers.has(module.slug)
+      ? 'Hide all users connected'
+      : 'Show all users connected';
+
+    return `
+      <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}">
+        <div class="learning-module-card-inner">
+          <button
+            type="button"
+            class="learning-module-header"
+            data-action="toggle-module"
+            data-module-id="${escapeHtml(module.id)}"
+            aria-expanded="${String(isExpanded)}"
+          >
+            <div class="stack-xs">
+              <div class="learning-module-heading-row">
+                <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
+                ${isConnected ? '<span class="pill success">Connected</span>' : ''}
+              </div>
+              <div>
+                <h3>${escapeHtml(module.title)}</h3>
+                <p class="muted">${escapeHtml(module.description)}</p>
+              </div>
+            </div>
+            <span class="learning-module-chevron" aria-hidden="true">${renderChevronIcon()}</span>
+          </button>
+
+          <div class="learning-module-actions">
+            <button
+              type="button"
+              class="learning-module-connect-button ${isConnected ? 'is-connected' : ''}"
+              data-action="connect-module"
+              data-module-id="${escapeHtml(module.id)}"
+              data-module-slug="${escapeHtml(module.slug)}"
+              ${isConnecting || isConnected ? 'disabled' : ''}
+            >
+              <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
+              <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : 'Connect Me'}</span>
+            </button>
+            <button
+              type="button"
+              class="secondary small"
+              data-action="toggle-users"
+              data-module-slug="${escapeHtml(module.slug)}"
+            >
+              ${escapeHtml(userToggleLabel)}
+            </button>
+          </div>
+
+          ${!state.user ? '<p class="muted small-text">Sign in to connect yourself to a module. Browsing modules remains available while signed out.</p>' : ''}
+
+          <div class="learning-module-collapsible ${isExpanded ? 'is-open' : ''}">
+            <div class="learning-module-collapsible-inner">
+              <div class="learning-module-section-block stack-sm">
+                <div class="section-heading compact">
+                  <div>
+                    <h3>Topics</h3>
+                    <p class="muted small-text">Expand each module to preview its study path.</p>
+                  </div>
+                </div>
+                ${topics.length
+                  ? `
+                    <ul class="learning-module-topic-list">
+                      ${topics.map((topic) => `<li>${escapeHtml(topic.topic_title)}</li>`).join('')}
+                    </ul>
+                  `
+                  : '<div class="empty-state">No topics have been added yet.</div>'}
+              </div>
+            </div>
+          </div>
+
+          ${renderLearningModuleUsers(module)}
+        </div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function loadLearningModules({ force = false } = {}) {
+  state.learningModulesLoading = true;
+  state.learningModulesError = '';
+  renderLearningModulesSection();
+
+  try {
+    const [modules, currentUserConnections] = await Promise.all([
+      !force && state.learningModules.length ? Promise.resolve(state.learningModules) : fetchLearningModules(),
+      state.user ? fetchLearningModuleConnectionsForCurrentUser() : Promise.resolve([])
+    ]);
+
+    state.learningModules = modules || [];
+    state.moduleConnectionIds = new Set((currentUserConnections || []).map((connection) => connection.module_id));
+  } catch (error) {
+    state.learningModulesError = error.message || 'Unable to load learning modules right now.';
+  } finally {
+    state.learningModulesLoading = false;
+    if (!state.user) {
+      state.moduleConnectionIds = new Set();
+      state.pendingModuleConnectionIds = new Set();
+    }
+    renderLearningModulesSection();
+  }
+}
+
+async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
+  if (!moduleSlug) {
+    return;
+  }
+
+  if (!force && state.learningModuleUsersBySlug.has(moduleSlug)) {
+    renderLearningModulesSection();
+    return;
+  }
+
+  state.learningModuleUsersLoading.add(moduleSlug);
+  state.learningModuleUsersErrors.delete(moduleSlug);
+  renderLearningModulesSection();
+
+  try {
+    const connectedUsers = await fetchLearningModuleConnectedUsers(moduleSlug);
+    state.learningModuleUsersBySlug.set(moduleSlug, connectedUsers || []);
+  } catch (error) {
+    state.learningModuleUsersErrors.set(moduleSlug, error.message || 'Unable to load connected users right now.');
+  } finally {
+    state.learningModuleUsersLoading.delete(moduleSlug);
+    renderLearningModulesSection();
+  }
+}
+
+async function handleLearningModuleConnect(moduleId, moduleSlug) {
+  if (!moduleId) {
+    return;
+  }
+
+  if (!state.user) {
+    setStatus('Please sign in to connect yourself to a learning module.', 'error');
+    return;
+  }
+
+  if (state.moduleConnectionIds.has(moduleId) || state.pendingModuleConnectionIds.has(moduleId)) {
+    return;
+  }
+
+  state.pendingModuleConnectionIds.add(moduleId);
+  renderLearningModulesSection();
+
+  try {
+    await connectCurrentUserToLearningModule(moduleId);
+    state.moduleConnectionIds.add(moduleId);
+    state.learningModuleUsersBySlug.delete(moduleSlug);
+    setStatus('You are now connected to this learning module.', 'success');
+
+    if (state.expandedLearningModuleUsers.has(moduleSlug)) {
+      await loadLearningModuleUsers(moduleSlug, { force: true });
+    } else {
+      renderLearningModulesSection();
+    }
+  } catch (error) {
+    setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
+  } finally {
+    state.pendingModuleConnectionIds.delete(moduleId);
+    renderLearningModulesSection();
+  }
+}
+
 function renderDesktopWorkspace() {
   renderProfileWorkspaceSection();
   renderDataControlsSection();
   renderSupabaseConfiguration();
+  renderLearningModulesSection();
 }
 
 function syncDesktopNavState() {
@@ -1342,6 +1634,7 @@ async function refreshState({ reason = 'manual', force = false } = {}) {
   renderPresenceControls();
   renderCurrentSiteUrlSummary();
   renderDesktopWorkspace();
+  await loadLearningModules({ force });
   await renderActiveUsers({ refreshVersion, force });
   await loadTopSites({ reason, refreshVersion, force });
 
@@ -1765,7 +2058,7 @@ function bindElements() {
     'supabaseTablesOverview', 'supabaseStorageOverview', 'supabaseAuthSummary', 'supabaseEnvStatus', 'dataControlsForm',
     'dataPresenceSharingEnabled', 'dataInvisibleModeEnabled', 'dataTrackingEnabled', 'dataHistoryMode', 'dataRetentionSelect',
     'dataControlsValidationMessage', 'dataPresenceSummary', 'dataConsentSummary', 'dataProfileSummary', 'dataRetentionSummary',
-    'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls'
+    'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls', 'learningModulesList'
   ].forEach((id) => {
     els[id] = $(id);
   });
@@ -1796,6 +2089,43 @@ async function bindEvents() {
 
   els.openDesktopButton?.addEventListener('click', async () => {
     await openDesktopWorkspace();
+  });
+
+  els.learningModulesList?.addEventListener('click', async (event) => {
+    const actionButton = event.target.closest('[data-action]');
+    if (!actionButton) {
+      return;
+    }
+
+    const moduleId = actionButton.dataset.moduleId || '';
+    const moduleSlug = actionButton.dataset.moduleSlug || '';
+
+    if (actionButton.dataset.action === 'toggle-module') {
+      if (state.expandedLearningModules.has(moduleId)) {
+        state.expandedLearningModules.delete(moduleId);
+      } else {
+        state.expandedLearningModules.add(moduleId);
+      }
+      renderLearningModulesSection();
+      return;
+    }
+
+    if (actionButton.dataset.action === 'connect-module') {
+      await handleLearningModuleConnect(moduleId, moduleSlug);
+      return;
+    }
+
+    if (actionButton.dataset.action === 'toggle-users') {
+      if (state.expandedLearningModuleUsers.has(moduleSlug)) {
+        state.expandedLearningModuleUsers.delete(moduleSlug);
+        renderLearningModulesSection();
+        return;
+      }
+
+      state.expandedLearningModuleUsers.add(moduleSlug);
+      renderLearningModulesSection();
+      await loadLearningModuleUsers(moduleSlug);
+    }
   });
 
   [els.editProfileButton, els.profileSummaryEditButton, els.editProfileSectionButton, els.editProfileFromDataControls].filter(Boolean).forEach((button) => {
