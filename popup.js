@@ -37,6 +37,26 @@ const HISTORY_MODE_OPTIONS = [
   { value: 'full_url', label: 'Full URL' }
 ];
 
+const POPUP_MIN_WIDTH = 420;
+
+function enforcePopupWidth() {
+  if (typeof document === 'undefined' || isDesktopWorkspace) {
+    return;
+  }
+
+  const widthValue = `${POPUP_MIN_WIDTH}px`;
+  document.documentElement.style.width = widthValue;
+  document.documentElement.style.minWidth = widthValue;
+  document.body.style.width = widthValue;
+  document.body.style.minWidth = widthValue;
+
+  const shell = document.querySelector('.popup-dashboard');
+  if (shell) {
+    shell.style.width = '100%';
+    shell.style.minWidth = `calc(${widthValue} - 36px)`;
+  }
+}
+
 const UI_TEXT = {
   topSiteDetailSubheading: "Currently active users on the selected website. URL detail below reflects each user's privacy scope.",
   desktopLaunchError: 'Unable to open the full desktop version right now.'
@@ -1511,6 +1531,7 @@ async function bindEvents() {
 }
 
 async function initialize() {
+  enforcePopupWidth();
   bindElements();
   renderPrivacyTab();
   const config = await ensureBuiltInConfig();
