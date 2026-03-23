@@ -684,14 +684,19 @@ function renderTopSites() {
   els.topSitesList.innerHTML = state.topSites
     .map((site) => {
       const matchesCurrentSite = currentScope?.domain && currentScope.domain === site.domain;
+      const siteTitle = String(site.page_title || '').trim() || 'Title unavailable';
+      const siteUrl = String(site.full_url || site.trackedDisplayUrl || site.domain || '').trim() || 'URL unavailable';
       const currentSiteDetail = matchesCurrentSite
         ? `<div class="muted small-text break-anywhere">Current visible detail: ${escapeHtml(currentScope.displayUrl)}</div>`
         : '';
 
       return `
         <button type="button" class="list-item site-item" data-domain="${escapeHtml(site.domain)}">
-          <div>
-            <strong>${escapeHtml(site.domain)}</strong>
+          <div class="site-item-content stack-xs">
+            <strong class="break-anywhere">${escapeHtml(site.domain)}</strong>
+            <div class="site-meta-row"><span class="site-meta-label">Title</span><span class="muted break-anywhere">${escapeHtml(siteTitle)}</span></div>
+            <div class="site-meta-row"><span class="site-meta-label">Full URL</span><span class="muted break-anywhere">${escapeHtml(siteUrl)}</span></div>
+            <div class="site-meta-row"><span class="site-meta-label">Domain</span><span class="muted break-anywhere">${escapeHtml(site.domain)}</span></div>
             <div class="muted">Last active ${new Date(site.last_seen).toLocaleTimeString()}</div>
             ${currentSiteDetail}
           </div>
