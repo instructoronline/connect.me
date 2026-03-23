@@ -674,6 +674,34 @@ code {
 .pill.success { background: var(--success-soft); color: var(--success); }
 .pill.warning { background: var(--warning-soft); color: var(--warning); }
 
+.active-user-badge {
+  display: inline-grid;
+  grid-auto-flow: row;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  min-width: 92px;
+  min-height: 92px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.active-user-badge-count {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.active-user-badge-text {
+  font-size: 0.72rem;
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .top-divider {
   padding-top: 16px;
   border-top: 1px solid var(--border);
