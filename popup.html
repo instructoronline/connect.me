@@ -8,19 +8,41 @@
   </head>
   <body class="popup-body light-theme" data-popup-min-width="420">
     <main class="dashboard-shell popup-dashboard">
-      <section class="dashboard-hero card soft-card">
-        <div class="dashboard-hero-copy">
-          <p class="eyebrow">Professional presence dashboard</p>
-          <h1>Connect.Me</h1>
-          <p class="subtitle">A fast mini control panel for current-site awareness, privacy controls, and live professional presence.</p>
-        </div>
-        <div class="hero-actions">
-          <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
-            <span>Presence</span>
-            <input id="presenceQuickToggle" type="checkbox" />
-          </label>
-          <button id="openDesktopButton" type="button" class="secondary small">Open workspace</button>
-        </div>
+      <section class="popup-app-frame">
+        <header class="popup-topbar">
+          <div class="popup-brand-lockup">
+            <div class="popup-brand-mark">C</div>
+            <div>
+              <p class="eyebrow">Connect.Me workspace</p>
+              <h1>Welcome back.</h1>
+            </div>
+          </div>
+          <button id="openDesktopButton" type="button" class="secondary small">Desktop</button>
+        </header>
+
+        <section class="dashboard-hero card soft-card assessments-hero">
+          <div class="hero-visual-panel">
+            <div class="hero-visual-window">
+              <div class="hero-visual-avatar">CM</div>
+              <div class="hero-visual-lines">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          </div>
+          <div class="dashboard-hero-copy">
+            <p class="eyebrow">Professional presence dashboard</p>
+            <h2>Review your current site, privacy settings, and live member activity.</h2>
+            <p class="subtitle">A calmer, card-based layout inspired by the attached desktop dashboard designs, adapted for the extension popup.</p>
+          </div>
+          <div class="hero-actions hero-actions-inline">
+            <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
+              <span>Presence</span>
+              <input id="presenceQuickToggle" type="checkbox" />
+            </label>
+          </div>
+        </section>
       </section>
 
       <section class="popup-overview-grid">
