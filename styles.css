@@ -1,5 +1,8 @@
 :root {
   color-scheme: light;
+  --extension-shell-width: 420px;
+  --extension-shell-min-width: 380px;
+  --extension-shell-max-width: 460px;
   --bg: #eef3fb;
   --bg-accent: radial-gradient(circle at top left, rgba(53, 104, 255, 0.12), transparent 30%), radial-gradient(circle at top right, rgba(16, 185, 129, 0.09), transparent 26%);
   --surface: rgba(255, 255, 255, 0.96);
@@ -32,6 +35,7 @@ html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
   min-height: 100%;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
@@ -41,7 +45,9 @@ body {
 }
 
 body {
-  min-width: 400px;
+  min-width: var(--extension-shell-min-width);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .page-body {
@@ -49,8 +55,20 @@ body {
 }
 
 .popup-body {
-  width: 460px;
-  min-width: 460px;
+  width: var(--extension-shell-width);
+  min-width: var(--extension-shell-min-width);
+  max-width: var(--extension-shell-max-width);
+}
+
+.popup-root,
+.popup-body {
+  min-width: var(--extension-shell-min-width);
+}
+
+.popup-root {
+  width: var(--extension-shell-width);
+  max-width: var(--extension-shell-max-width);
+  overflow-x: hidden;
 }
 
 h1,
@@ -87,6 +105,8 @@ h3 { font-size: 0.98rem; line-height: 1.3; }
 
 .popup-dashboard {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 18px;
   display: grid;
   gap: 14px;
@@ -777,9 +797,8 @@ code {
 }
 
 @media (max-width: 1100px) {
-  body,
-  .desktop-body,
-  .popup-body {
+  .page-body,
+  .desktop-body {
     min-width: 0;
     width: auto;
   }
