@@ -21,6 +21,8 @@ const ACTIVE_CONTEXT_KEY = 'connectme-active-context';
 const PRESENCE_EXPIRY_MS = 3 * 60 * 1000;
 const DESKTOP_WINDOW_URL = chrome.runtime.getURL('desktop.html');
 const DESKTOP_WINDOW_BOUNDS = {
+  minWidth: 1180,
+  minHeight: 760,
   width: 1280,
   height: 920
 };
@@ -111,7 +113,19 @@ async function findDesktopWorkspaceTab() {
 }
 
 async function focusDesktopWorkspace(windowId, tabId) {
-  const updateWindow = chrome.windows.update(windowId, { focused: true, state: 'normal' });
+  const windowInfo = await chrome.windows.get(windowId);
+  const nextWidth = Number.isFinite(windowInfo?.width) && windowInfo.width >= DESKTOP_WINDOW_BOUNDS.minWidth
+    ? windowInfo.width
+    : DESKTOP_WINDOW_BOUNDS.width;
+  const nextHeight = Number.isFinite(windowInfo?.height) && windowInfo.height >= DESKTOP_WINDOW_BOUNDS.minHeight
+    ? windowInfo.height
+    : DESKTOP_WINDOW_BOUNDS.height;
+  const updateWindow = chrome.windows.update(windowId, {
+    focused: true,
+    state: 'normal',
+    width: nextWidth,
+    height: nextHeight
+  });
   const updateTab = Number.isInteger(tabId) ? chrome.tabs.update(tabId, { active: true }) : Promise.resolve(null);
   await Promise.all([updateWindow, updateTab]);
 }
