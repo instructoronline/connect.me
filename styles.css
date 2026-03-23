@@ -1224,18 +1224,22 @@ code {
 
 /* Desktop workspace navigation refactor */
 .desktop-dashboard {
+  --workspace-sidebar-width: clamp(72px, 6vw, 88px);
   display: grid;
-  grid-template-columns: minmax(72px, 88px) minmax(0, 1fr);
+  grid-template-columns: var(--workspace-sidebar-width) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
+  min-height: calc(100vh - 48px);
 }
 
 .workspace-nav-shell {
   position: sticky;
   top: 24px;
   align-self: start;
-  min-height: calc(100vh - 48px);
-  width: clamp(72px, 6vw, 88px);
+  min-width: 0;
+  width: 100%;
+  height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
   padding: 16px 12px;
   border: 1px solid var(--border);
   border-radius: 28px;
@@ -1246,11 +1250,11 @@ code {
   justify-content: space-between;
   gap: 18px;
   overflow: hidden;
-  transition: width 0.28s ease, padding 0.28s ease, box-shadow 0.28s ease, background 0.28s ease;
+  z-index: 2;
+  transition: padding 0.28s ease, box-shadow 0.28s ease, background 0.28s ease;
 }
 
 .workspace-nav-shell.is-expanded {
-  width: clamp(220px, 22vw, 272px);
   padding-inline: 16px;
   box-shadow: 0 22px 52px rgba(17, 38, 68, 0.08);
   background: rgba(255, 255, 255, 0.92);
@@ -1260,6 +1264,16 @@ code {
 .workspace-nav-bottom {
   display: grid;
   gap: 14px;
+}
+
+.workspace-nav-top {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.workspace-nav-bottom {
+  flex: 0 0 auto;
 }
 
 .workspace-nav-header {
@@ -1375,11 +1389,17 @@ code {
 .workspace-main-shell {
   display: grid;
   gap: 16px;
+  min-width: 0;
+  min-height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .workspace-main-stack {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .workspace-main-metrics {
@@ -1399,6 +1419,11 @@ code {
 }
 
 .workspace-section {
+  min-width: 0;
+}
+
+.workspace-main-shell > *,
+.workspace-main-stack > * {
   min-width: 0;
 }
 
@@ -1461,14 +1486,28 @@ code {
 @media (max-width: 1100px) {
   .desktop-dashboard {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
 
   .workspace-nav-shell,
   .workspace-nav-shell.is-expanded {
     position: static;
+    height: auto;
+    max-height: none;
     min-height: 0;
     width: 100%;
     padding: 14px;
+  }
+
+  .workspace-nav-top {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .workspace-main-shell {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
   }
 
   .workspace-nav-shell.is-collapsed .workspace-nav-summary {
