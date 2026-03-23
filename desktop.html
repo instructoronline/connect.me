@@ -7,28 +7,136 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="page-body desktop-body light-theme">
-    <main class="page-shell desktop-shell">
-      <header class="page-header desktop-header card soft-card">
-        <div>
-          <p class="eyebrow">Connect.Me desktop workspace</p>
-          <h1>Professional presence dashboard</h1>
-          <p class="subtitle">A spacious desktop-style workspace for current site visibility, community presence, profile editing, and privacy controls.</p>
-        </div>
-        <div class="header-actions stack-sm desktop-header-actions">
-          <label class="mini-toggle" for="presenceQuickToggle">
-            <span>Presence</span>
-            <input id="presenceQuickToggle" type="checkbox" />
-          </label>
-          <button id="openDesktopButton" type="button" class="secondary small">Full Desktop Version</button>
-        </div>
-      </header>
+    <main class="dashboard-shell desktop-dashboard">
+      <aside class="workspace-sidebar">
+        <section class="card soft-card workspace-brand-card">
+          <div class="stack-md">
+            <div>
+              <p class="eyebrow">Connect.Me desktop workspace</p>
+              <h1>Professional presence dashboard</h1>
+              <p class="subtitle">A persistent desktop workspace for current-site visibility, live shared users, profile editing, privacy controls, and top-site discovery.</p>
+            </div>
+            <div class="hero-actions sidebar-hero-actions">
+              <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
+                <span>Presence</span>
+                <input id="presenceQuickToggle" type="checkbox" />
+              </label>
+              <button id="openDesktopButton" type="button" class="secondary small">Open workspace</button>
+            </div>
+          </div>
+        </section>
 
-      <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
+        <section class="card workspace-status-card">
+          <p class="small-text muted">Current synchronized site</p>
+          <strong id="currentDomainBadge" class="sidebar-domain">No website detected</strong>
+          <p class="muted small-text">Owned by the background service worker and kept visible even while the popup is closed.</p>
+        </section>
 
-      <section class="desktop-top-grid">
-        <section id="authPanel" class="card hidden">
+        <nav class="tab-bar dashboard-nav sidebar-nav" aria-label="Desktop workspace navigation">
+          <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
+          <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
+          <button class="tab-link" data-tab="settingsTab">Settings</button>
+          <button class="tab-link" data-tab="privacyTab">Privacy</button>
+        </nav>
+
+        <section class="card sidebar-note-card">
+          <div class="stack-sm">
+            <p class="eyebrow">Workspace focus</p>
+            <h3>Persistent academic dashboard</h3>
+            <p class="muted small-text">Use the main content area for site awareness and member discovery, while the right rail handles profile editing, consent, and configuration.</p>
+          </div>
+        </section>
+      </aside>
+
+      <section class="workspace-main">
+        <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
+
+        <section class="desktop-overview-grid">
+          <section id="currentSiteTab" class="tab-panel active desktop-panel-span-two">
+            <article class="card stack-md workspace-card current-site-card desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Live workspace</p>
+                  <h2>Current Site</h2>
+                  <p class="muted">Your background-owned active-site state, privacy-scoped URL detail, your profile summary, and live members on the same site.</p>
+                </div>
+                <span class="badge">Background synced</span>
+              </div>
+
+              <section class="site-url-card stack-sm">
+                <div class="section-heading compact">
+                  <div>
+                    <h3>Tracked site detail</h3>
+                    <p id="currentSitePrivacyNote" class="muted small-text">Only the domain is visible because detailed tracking is currently off.</p>
+                  </div>
+                  <button id="copyCurrentUrlButton" type="button" class="secondary small">Copy visible URL</button>
+                </div>
+                <div id="currentSiteUrlSummary" class="url-summary empty-state">Open a supported website to view current site details.</div>
+              </section>
+
+              <div class="desktop-current-site-grid">
+                <section class="stack-sm subpanel-card">
+                  <div class="section-heading compact">
+                    <div>
+                      <h3>Profile summary</h3>
+                      <p class="muted small-text">The public-facing snapshot others can see according to your visibility controls.</p>
+                    </div>
+                  </div>
+                  <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
+                </section>
+
+                <section class="stack-sm subpanel-card">
+                  <div class="section-heading compact">
+                    <div>
+                      <h3>Presence controls</h3>
+                      <p class="muted small-text">Available only when presence sharing is on and Invisible Mode is off.</p>
+                    </div>
+                    <label class="mini-toggle" for="presenceSharingInline">
+                      <span>ON/OFF</span>
+                      <input id="presenceSharingInline" type="checkbox" />
+                    </label>
+                  </div>
+                  <div id="presenceStateNote" class="callout subtle">Enable presence sharing to see active members on this site.</div>
+                  <div id="activeUsersList" class="list"></div>
+                </section>
+              </div>
+            </article>
+          </section>
+
+          <section id="topSitesTab" class="tab-panel active desktop-panel-span-two">
+            <article class="card stack-md workspace-card desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Discovery</p>
+                  <h2>Top Sites</h2>
+                  <p class="muted">Domains with the highest number of active Connect.Me users right now.</p>
+                </div>
+                <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
+              </div>
+              <div class="callout subtle small-text">Top-site rankings remain domain-based, while user cards reveal additional path or full-URL detail only when those users have chosen to share it.</div>
+              <div class="desktop-split-grid">
+                <div id="topSitesList" class="list"></div>
+                <article id="topSiteDetailCard" class="detail-card card hidden desktop-panel-fill">
+                  <div class="section-heading compact">
+                    <div>
+                      <h3 id="topSiteDetailHeading">Site detail</h3>
+                      <p id="topSiteDetailSubheading" class="muted small-text">Currently active users on the selected website.</p>
+                    </div>
+                    <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
+                  </div>
+                  <div id="topSiteUsersList" class="list"></div>
+                </article>
+              </div>
+            </article>
+          </section>
+        </section>
+      </section>
+
+      <aside class="workspace-rail">
+        <section id="authPanel" class="card hidden workspace-card">
           <div class="section-heading">
             <div>
+              <p class="eyebrow">Authentication</p>
               <h2>Sign in to begin</h2>
               <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
             </div>
@@ -49,9 +157,10 @@
           </form>
         </section>
 
-        <section id="consentPanel" class="card hidden">
+        <section id="consentPanel" class="card hidden workspace-card">
           <div class="section-heading">
             <div>
+              <p class="eyebrow">Consent</p>
               <h2>Consent required</h2>
               <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
             </div>
@@ -75,10 +184,11 @@
           </form>
         </section>
 
-        <section id="profilePanel" class="card hidden">
+        <section id="profilePanel" class="card hidden workspace-card profile-editor-card">
           <div class="section-heading align-start">
             <div>
-              <h2>Profile setup</h2>
+              <p class="eyebrow">Profile workspace</p>
+              <h2>Profile editing</h2>
               <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
             </div>
             <button id="logoutButton" type="button" class="secondary small">Log out</button>
@@ -159,77 +269,16 @@
             <button type="submit">Save profile</button>
           </form>
         </section>
-      </section>
 
-      <nav class="tab-bar desktop-tab-bar" aria-label="Desktop workspace navigation">
-        <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
-        <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
-        <button class="tab-link" data-tab="settingsTab">Settings</button>
-        <button class="tab-link" data-tab="privacyTab">Privacy</button>
-      </nav>
-
-      <div class="desktop-workspace-grid">
-        <section id="currentSiteTab" class="tab-panel active desktop-span-two">
+        <section id="settingsTab" class="tab-panel active workspace-card">
           <article class="card stack-md desktop-panel-fill">
-            <div class="section-heading">
+            <div class="section-heading dashboard-section-heading">
               <div>
-                <h2>Current Site</h2>
-                <p class="muted">See the currently tracked site detail, your public profile summary, and live presence on the same site.</p>
+                <p class="eyebrow">Controls</p>
+                <h2>Settings, consent, and visibility controls</h2>
+                <p class="muted">Manage tracking scope, presence sharing, consent, and built-in configuration from the desktop workspace.</p>
               </div>
-              <span id="currentDomainBadge" class="badge">No website detected</span>
             </div>
-
-            <section class="site-url-card stack-sm">
-              <div class="section-heading compact">
-                <div>
-                  <h3>Tracked site detail</h3>
-                  <p id="currentSitePrivacyNote" class="muted small-text">Only the domain is visible because detailed tracking is currently off.</p>
-                </div>
-                <button id="copyCurrentUrlButton" type="button" class="secondary small">Copy visible URL</button>
-              </div>
-              <div id="currentSiteUrlSummary" class="url-summary empty-state">Open a supported website to view current site details.</div>
-            </section>
-
-            <div class="desktop-inner-grid">
-              <section class="stack-sm">
-                <h3>User profile</h3>
-                <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
-              </section>
-              <section class="stack-sm">
-                <div class="section-heading compact">
-                  <div>
-                    <h3>Live presence</h3>
-                    <p class="muted small-text">Available only when presence sharing is on and Invisible Mode is off.</p>
-                  </div>
-                  <label class="mini-toggle" for="presenceSharingInline">
-                    <span>ON/OFF</span>
-                    <input id="presenceSharingInline" type="checkbox" />
-                  </label>
-                </div>
-                <div id="presenceStateNote" class="callout subtle">Enable presence sharing to see active members on this site.</div>
-                <div id="activeUsersList" class="list"></div>
-              </section>
-            </div>
-          </article>
-        </section>
-
-        <section id="topSitesTab" class="tab-panel active">
-          <article class="card stack-md desktop-panel-fill">
-            <div class="section-heading">
-              <div>
-                <h2>Top Sites</h2>
-                <p class="muted">Domains with the highest number of active Connect.Me users right now.</p>
-              </div>
-              <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
-            </div>
-            <div class="callout subtle small-text">Top-site rankings remain domain-based. User cards reveal more detailed tracked paths or full URLs only when those users have consented to share that detail.</div>
-            <div id="topSitesList" class="list"></div>
-          </article>
-        </section>
-
-        <section id="settingsTab" class="tab-panel active">
-          <article class="card stack-md desktop-panel-fill">
-            <h2>Settings, consent, and visibility controls</h2>
             <form id="privacySettingsForm" class="stack-md">
               <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
               <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
@@ -267,23 +316,19 @@
           </article>
         </section>
 
-        <section id="privacyTab" class="tab-panel active desktop-span-two">
-          <article id="topSiteDetailCard" class="card stack-md hidden">
-            <div class="section-heading">
-              <div>
-                <h2 id="topSiteDetailHeading">Site detail</h2>
-                <p id="topSiteDetailSubheading" class="muted">Currently active users on the selected website.</p>
-              </div>
-              <button id="closeTopSiteDetail" type="button" class="secondary small">Close</button>
-            </div>
-            <div id="topSiteUsersList" class="list"></div>
-          </article>
+        <section id="privacyTab" class="tab-panel active workspace-card">
           <article class="card stack-md desktop-panel-fill">
-            <h2>Privacy Policy</h2>
+            <div class="section-heading dashboard-section-heading">
+              <div>
+                <p class="eyebrow">Policy</p>
+                <h2>Privacy policy</h2>
+                <p class="muted">Review how Connect.Me handles retention, consent, visibility scope, and user controls.</p>
+              </div>
+            </div>
             <div id="privacyPolicyContent" class="privacy-copy"></div>
           </article>
         </section>
-      </div>
+      </aside>
     </main>
 
     <script type="module" src="desktop.js"></script>

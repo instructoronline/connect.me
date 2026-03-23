@@ -73,11 +73,15 @@ const state = {
   topSitesPollId: null,
   activeUsersRequestId: 0,
   topSitesRequestId: 0,
-  detailUsersRequestId: 0
+  detailUsersRequestId: 0,
+  contextRefreshId: null
 };
 
 const els = {};
 const isDesktopWorkspace = document.body.classList.contains('desktop-body');
+const ACTIVE_CONTEXT_STORAGE_KEY = 'connectme-active-context';
+const CONTEXT_FALLBACK_REFRESH_MS = isDesktopWorkspace ? 12000 : 15000;
+const WORKSPACE_LABEL = isDesktopWorkspace ? 'Desktop' : 'Popup';
 
 const SHARED_CARD_DEBUG_ENABLED = true;
 
@@ -383,38 +387,61 @@ function populateSelect(select, options, selectedValue) {
   });
 }
 
+function normalizeContextToTabInfo(context) {
+  if (!context?.domain) {
+    return null;
+  }
+
+  const derived = context.url ? extractTabInfo(context.url) : null;
+  return {
+    url: context.url || derived?.url || '',
+    domain: context.domain || derived?.domain || '',
+    path: context.path || derived?.path || '/',
+    title: context.title || derived?.title || context.domain,
+    privacyDescription: context.privacyDescription || null,
+    effectiveHistoryMode: context.effectiveHistoryMode || null,
+    requestedHistoryMode: context.requestedHistoryMode || null,
+    trackedDisplayUrl: context.trackedDisplayUrl || context.domain,
+    detectedAt: context.detectedAt || null
+  };
+}
+
+async function readStoredActiveContext() {
+  const result = await chrome.storage.local.get(ACTIVE_CONTEXT_STORAGE_KEY);
+  return result?.[ACTIVE_CONTEXT_STORAGE_KEY] || null;
+}
+
 async function getCurrentTabInfo() {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_CONTEXT' });
-    if (response?.ok && response.context) {
-      if (response.context.url) {
-        return {
-          ...extractTabInfo(response.context.url),
-          domain: response.context.domain || extractTabInfo(response.context.url)?.domain,
-          path: response.context.path || extractTabInfo(response.context.url)?.path,
-          privacyDescription: response.context.privacyDescription || null,
-          effectiveHistoryMode: response.context.effectiveHistoryMode || null,
-          requestedHistoryMode: response.context.requestedHistoryMode || null
-        };
-      }
-      if (response.context.domain) {
-        return {
-          domain: response.context.domain,
-          path: response.context.path || '/',
-          url: response.context.url || '',
-          title: response.context.title || response.context.domain,
-          privacyDescription: response.context.privacyDescription || null,
-          effectiveHistoryMode: response.context.effectiveHistoryMode || null,
-          requestedHistoryMode: response.context.requestedHistoryMode || null
-        };
+    if (response?.ok) {
+      const fromBackground = normalizeContextToTabInfo(response.context);
+      if (fromBackground) {
+        return fromBackground;
       }
     }
-  } catch (_error) {
-    // Fall back to querying the active tab directly when the service worker is unavailable.
+  } catch (error) {
+    logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} current-site fetch fell back to storage`, { message: error?.message || String(error) });
   }
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return extractTabInfo(tab?.url);
+  const storedContext = normalizeContextToTabInfo(await readStoredActiveContext().catch(() => null));
+  if (storedContext) {
+    return storedContext;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({ type: 'TRACK_NOW', reason: isDesktopWorkspace ? 'desktop-fallback-sync' : 'popup-fallback-sync' });
+    const retriedContext = normalizeContextToTabInfo(await readStoredActiveContext().catch(() => null));
+    if (retriedContext) {
+      return retriedContext;
+    }
+  } catch (error) {
+    logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} fallback site refresh failed`, { message: error?.message || String(error) });
+  }
+
+  const activeTabs = await chrome.tabs.query({ active: true });
+  const fallbackTab = activeTabs.find((tab) => extractTabInfo(tab?.url));
+  return extractTabInfo(fallbackTab?.url);
 }
 
 function getInitials(profile) {
@@ -874,7 +901,7 @@ async function refreshState({ reason = 'manual' } = {}) {
     state.hasSavedPrivacySettings = false;
   }
 
-  logStructured('log', '[Connect.Me] Popup state refreshed', {
+  logStructured('log', `[Connect.Me] ${WORKSPACE_LABEL} state sync`, {
     reason,
     refreshVersion,
     userId: state.user?.id || null,
@@ -1102,9 +1129,9 @@ function startTopSitesPolling() {
 
 function handleRuntimeMessage(message) {
   if (message?.type === 'ACTIVE_CONTEXT_CHANGED') {
-    logStructured('log', '[Connect.Me] Popup refresh trigger', message);
+    logStructured('log', `[Connect.Me] ${WORKSPACE_LABEL} current-site event`, message);
     refreshState({ reason: message.reason || 'background-event' }).catch((error) => {
-      logStructured('error', '[Connect.Me] Popup refresh failed', { reason: message.reason, message: error.message });
+      logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} refresh failed`, { reason: message.reason, message: error.message });
     });
     return;
   }
@@ -1117,21 +1144,48 @@ function handleRuntimeMessage(message) {
   }
 }
 
+function handleStorageChange(changes, areaName) {
+  if (areaName !== 'local' || !changes?.[ACTIVE_CONTEXT_STORAGE_KEY]) {
+    return;
+  }
+
+  logStructured('log', `[Connect.Me] ${WORKSPACE_LABEL} storage current-site sync`, {
+    oldValue: changes[ACTIVE_CONTEXT_STORAGE_KEY].oldValue || null,
+    newValue: changes[ACTIVE_CONTEXT_STORAGE_KEY].newValue || null
+  });
+
+  refreshState({ reason: isDesktopWorkspace ? 'desktop-storage-sync' : 'popup-storage-sync' }).catch((error) => {
+    logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} storage sync failed`, { message: error.message });
+  });
+}
+
 function bindRuntimeListeners() {
   chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+  chrome.storage.onChanged.addListener(handleStorageChange);
   window.addEventListener('focus', () => {
-    refreshState({ reason: 'popup-focus' }).catch((error) => {
-      logStructured('error', '[Connect.Me] Popup focus refresh failed', { message: error.message });
+    refreshState({ reason: isDesktopWorkspace ? 'desktop-focus' : 'popup-focus' }).catch((error) => {
+      logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} focus refresh failed`, { message: error.message });
     });
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      refreshState({ reason: 'popup-visible' }).catch((error) => {
-        logStructured('error', '[Connect.Me] Popup visibility refresh failed', { message: error.message });
+      refreshState({ reason: isDesktopWorkspace ? 'desktop-visible' : 'popup-visible' }).catch((error) => {
+        logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} visibility refresh failed`, { message: error.message });
       });
     }
   });
-  window.addEventListener('beforeunload', stopTopSitesPolling);
+  state.contextRefreshId = window.setInterval(() => {
+    refreshState({ reason: isDesktopWorkspace ? 'desktop-fallback-refresh' : 'popup-fallback-refresh' }).catch((error) => {
+      logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} fallback refresh missed`, { message: error.message });
+    });
+  }, CONTEXT_FALLBACK_REFRESH_MS);
+  window.addEventListener('beforeunload', () => {
+    stopTopSitesPolling();
+    if (state.contextRefreshId) {
+      clearInterval(state.contextRefreshId);
+      state.contextRefreshId = null;
+    }
+  });
 }
 
 function bindElements() {
