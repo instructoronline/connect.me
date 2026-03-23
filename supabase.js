@@ -1,3 +1,5 @@
+import { getStarterLearningModules } from './learning-modules.js';
+
 const STORAGE_KEYS = {
   config: 'connectme-config',
   session: 'connectme-session',
@@ -29,63 +31,18 @@ export const PROFILE_VISIBILITY_FIELDS = Object.freeze({
   share_bio: true
 });
 
-export const LEARNING_MODULE_FALLBACK_DATA = Object.freeze([
-  {
-    id: 'fallback-foundations-of-transformers',
-    slug: 'foundations-of-transformers',
-    title: 'Foundations of Transformers',
-    description: 'An introductory module covering the core ideas behind transformers, including sequence modeling, attention, tokens, embeddings, and why transformers became central to modern AI.',
-    icon: 'book-open',
-    sort_order: 1,
-    topics: [
-      { id: 'fallback-foundations-of-transformers-topic-1', topic_title: 'What problems transformers solve', sort_order: 1 },
-      { id: 'fallback-foundations-of-transformers-topic-2', topic_title: 'Tokens and tokenization', sort_order: 2 },
-      { id: 'fallback-foundations-of-transformers-topic-3', topic_title: 'Embeddings and representation', sort_order: 3 },
-      { id: 'fallback-foundations-of-transformers-topic-4', topic_title: 'Self-attention basics', sort_order: 4 },
-      { id: 'fallback-foundations-of-transformers-topic-5', topic_title: 'Why transformers outperform older sequence models', sort_order: 5 },
-      { id: 'fallback-foundations-of-transformers-topic-6', topic_title: 'Overview of encoder and decoder ideas', sort_order: 6 }
-    ]
-  },
-  {
-    id: 'fallback-mathematical-foundations-of-transformers',
-    slug: 'mathematical-foundations-of-transformers',
-    title: 'Mathematical Foundations of Transformers',
-    description: 'A mathematically focused module covering the linear algebra, probability, optimization, and matrix operations that support transformer models.',
-    icon: 'book-open',
-    sort_order: 2,
-    topics: [
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-1', topic_title: 'Vectors, matrices, and tensor intuition', sort_order: 1 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-2', topic_title: 'Dot products and similarity', sort_order: 2 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-3', topic_title: 'Softmax and probability distributions', sort_order: 3 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-4', topic_title: 'Matrix multiplication in attention', sort_order: 4 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-5', topic_title: 'Gradients and backpropagation overview', sort_order: 5 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-6', topic_title: 'Optimization basics for training transformers', sort_order: 6 },
-      { id: 'fallback-mathematical-foundations-of-transformers-topic-7', topic_title: 'Positional encoding mathematics', sort_order: 7 }
-    ]
-  },
-  {
-    id: 'fallback-foundations-of-transformer-architecture',
-    slug: 'foundations-of-transformer-architecture',
-    title: 'Foundations of Transformer Architecture',
-    description: 'A structural module explaining the internal components of transformer systems, including attention blocks, feed-forward layers, residual connections, normalization, and multi-head mechanisms.',
-    icon: 'book-open',
-    sort_order: 3,
-    topics: [
-      { id: 'fallback-foundations-of-transformer-architecture-topic-1', topic_title: 'Query, key, and value roles', sort_order: 1 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-2', topic_title: 'Multi-head attention', sort_order: 2 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-3', topic_title: 'Residual connections', sort_order: 3 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-4', topic_title: 'Layer normalization', sort_order: 4 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-5', topic_title: 'Feed-forward networks', sort_order: 5 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-6', topic_title: 'Encoder-only vs decoder-only vs encoder-decoder', sort_order: 6 },
-      { id: 'fallback-foundations-of-transformer-architecture-topic-7', topic_title: 'Information flow through transformer layers', sort_order: 7 }
-    ]
-  }
-]);
+export const LEARNING_MODULE_FALLBACK_DATA = Object.freeze(getStarterLearningModules());
 
 function cloneLearningModuleFallbackData() {
   return LEARNING_MODULE_FALLBACK_DATA.map((module) => ({
     ...module,
-    topics: (module.topics || []).map((topic) => ({ ...topic }))
+    topics: (module.topics || []).map((topic) => ({
+      ...topic,
+      cards: (topic.cards || []).map((card) => ({
+        ...card,
+        sections: (card.sections || []).map((section) => ({ ...section }))
+      }))
+    }))
   }));
 }
 
@@ -118,6 +75,83 @@ function isLearningModuleTableMissingMessage(message = '') {
     || normalized.includes('relation "public.learning_module_topics" does not exist')
     || (normalized.includes('learning_modules') && normalized.includes('schema cache'))
     || (normalized.includes('learning_module_topics') && normalized.includes('schema cache'));
+}
+
+function isLearningModuleCardsTableMissingMessage(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes("could not find the table 'public.learning_module_cards' in the schema cache")
+    || normalized.includes('relation "public.learning_module_cards" does not exist')
+    || (normalized.includes('learning_module_cards') && normalized.includes('schema cache'));
+}
+
+function normalizeLearningModuleCard(card, fallbackCard = {}, { moduleId, topicId, sortOrder = 0 } = {}) {
+  const content = card?.content && typeof card.content === 'object' ? card.content : {};
+  const fallbackSections = Array.isArray(fallbackCard.sections) ? fallbackCard.sections : [];
+  const sections = Array.isArray(content.sections)
+    ? content.sections.filter((section) => section?.body)
+    : fallbackSections;
+
+  return {
+    id: card?.id || fallbackCard.id || `local-card-${topicId}-${sortOrder}`,
+    module_id: card?.module_id || fallbackCard.module_id || moduleId,
+    topic_id: card?.topic_id || fallbackCard.topic_id || topicId,
+    title: card?.title || fallbackCard.title || 'Learning card',
+    card_type: card?.card_type || fallbackCard.card_type || 'concept',
+    sort_order: card?.sort_order || fallbackCard.sort_order || sortOrder,
+    subtopic_title: content.subtopic_title || fallbackCard.subtopic_title || '',
+    sections: sections.map((section) => ({
+      label: section.label || 'Section',
+      body: section.body || ''
+    }))
+  };
+}
+
+function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards = []) {
+  const starterModules = getStarterLearningModules();
+  const starterModulesBySlug = new Map(starterModules.map((module) => [module.slug, module]));
+  const topicsByModuleId = new Map();
+  const cardsByTopicId = new Map();
+
+  (topics || []).forEach((topic) => {
+    const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
+    moduleTopics.push(topic);
+    topicsByModuleId.set(topic.module_id, moduleTopics);
+  });
+
+  (cards || []).forEach((card) => {
+    const topicCards = cardsByTopicId.get(card.topic_id) || [];
+    topicCards.push(card);
+    cardsByTopicId.set(card.topic_id, topicCards);
+  });
+
+  return (modules || []).map((module) => {
+    const starterModule = starterModulesBySlug.get(module.slug);
+    const starterTopics = starterModule?.topics || [];
+    const starterTopicsByTitle = new Map(starterTopics.map((topic) => [topic.topic_title, topic]));
+    const moduleTopics = (topicsByModuleId.get(module.id) || starterTopics).map((topic, topicIndex) => {
+      const starterTopic = starterTopicsByTitle.get(topic.topic_title) || starterTopics[topicIndex] || null;
+      const topicCards = cardsByTopicId.get(topic.id) || [];
+      const fallbackCards = starterTopic?.cards || [];
+      const cardsToUse = (topicCards.length ? topicCards : fallbackCards).map((card, cardIndex) => (
+        normalizeLearningModuleCard(card, fallbackCards[cardIndex] || {}, {
+          moduleId: module.id,
+          topicId: topic.id,
+          sortOrder: card.sort_order || fallbackCards[cardIndex]?.sort_order || cardIndex + 1
+        })
+      ));
+
+      return {
+        ...topic,
+        summary: topic.summary || starterTopic?.summary || '',
+        cards: cardsToUse
+      };
+    });
+
+    return {
+      ...module,
+      topics: moduleTopics
+    };
+  });
 }
 
 function isExtensionContext() {
@@ -1350,25 +1384,30 @@ export async function fetchLearningModules() {
         query: '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc'
       })
     ]);
+    let cards = [];
+    let usingBundledCards = false;
 
-    const topicsByModuleId = new Map();
-    (topics || []).forEach((topic) => {
-      const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
-      moduleTopics.push(topic);
-      topicsByModuleId.set(topic.module_id, moduleTopics);
-    });
+    try {
+      cards = await publicRestRequest('learning_module_cards', {
+        query: '?select=id,module_id,topic_id,title,card_type,sort_order,content&order=module_id.asc,topic_id.asc,sort_order.asc'
+      });
+    } catch (cardsError) {
+      if (!isLearningModuleCardsTableMissingMessage(cardsError?.message)) {
+        console.warn('[Connect.Me] Unable to load learning module cards from Supabase; using bundled lesson cards instead.', cardsError);
+      }
+      usingBundledCards = true;
+    }
 
     return {
-      modules: (modules || []).map((module) => ({
-        ...module,
-        topics: topicsByModuleId.get(module.id) || []
-      })),
-      source: 'supabase',
+      modules: mergeLearningModulesWithStarterContent(modules || [], topics || [], cards || []),
+      source: usingBundledCards ? 'supabase+bundled-cards' : 'supabase',
       persistenceAvailable: true,
       setupRequired: false,
-      statusBadge: 'Supabase synced',
-      statusTone: 'success',
-      statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+      statusBadge: usingBundledCards ? 'Bundled cards' : 'Supabase synced',
+      statusTone: usingBundledCards ? 'warning' : 'success',
+      statusMessage: usingBundledCards
+        ? 'Modules and connections are synced with Supabase, and the guided lesson cards are being served from bundled starter content.'
+        : 'Learning Modules are loading from Supabase and support saved connections.',
       fallbackDetail: '',
       errorMessage: ''
     };
@@ -1398,25 +1437,35 @@ export async function connectCurrentUserToLearningModule(moduleId) {
     throw new Error('Please sign in to connect yourself to a learning module.');
   }
 
-  let rows = await restRequest('learning_module_connections', {
-    method: 'POST',
-    query: '?on_conflict=module_id,user_id',
-    headers: {
-      Prefer: 'resolution=ignore-duplicates,return=representation'
-    },
-    body: {
-      module_id: moduleId,
-      user_id: user.id
-    }
+  const existingRows = await restRequest('learning_module_connections', {
+    query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
   });
 
-  if (!rows?.length) {
-    rows = await restRequest('learning_module_connections', {
-      query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
-    });
+  if (existingRows?.length) {
+    return existingRows[0];
   }
 
-  return rows?.[0] || null;
+  try {
+    const rows = await restRequest('learning_module_connections', {
+      method: 'POST',
+      body: {
+        module_id: moduleId,
+        user_id: user.id
+      }
+    });
+
+    return rows?.[0] || null;
+  } catch (error) {
+    const normalizedMessage = String(error?.message || '').toLowerCase();
+    if (normalizedMessage.includes('duplicate key') || normalizedMessage.includes('already exists')) {
+      const rows = await restRequest('learning_module_connections', {
+        query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+      });
+      return rows?.[0] || null;
+    }
+
+    throw error;
+  }
 }
 
 export async function fetchLearningModuleConnectedUsers(moduleSlug) {

@@ -102,6 +102,12 @@ const state = {
   learningModuleUsersBySlug: new Map(),
   learningModuleUsersLoading: new Set(),
   learningModuleUsersErrors: new Map(),
+  activeLearningView: 'moduleList',
+  activeModuleId: '',
+  activeTopicIndex: 0,
+  activeCardIndex: 0,
+  activeSubcardIndex: 0,
+  learningModuleCompleted: false,
   formState: {
     consent: createFormState(),
     settings: createFormState(),
@@ -915,6 +921,7 @@ function renderSupabaseConfiguration() {
     buildInfoTile('user_privacy_settings', 'Configured', 'Acts as the consent and privacy settings record.'),
     buildInfoTile('learning_modules', 'Configured', 'Stores seeded learning-module metadata.'),
     buildInfoTile('learning_module_topics', 'Configured', 'Stores ordered topics for each learning module.'),
+    buildInfoTile('learning_module_cards', 'Configured', 'Stores ordered guided lesson cards and structured content for each topic.'),
     buildInfoTile('learning_module_connections', 'Configured', 'Stores user-to-module assignments with duplicate prevention.'),
     buildInfoTile('top_active_sites', 'Derived view', 'Aggregates currently active domains.'),
     buildInfoTile('shared_sites / site_visibility', 'Not in current build', 'No separate shared-sites table is defined in the shipped schema.')
@@ -1129,6 +1136,214 @@ function renderLearningModuleUsers(module) {
   `;
 }
 
+function getLearningModuleById(moduleId) {
+  return state.learningModules.find((module) => module.id === moduleId) || null;
+}
+
+function getLearningModuleTopicCards(topic) {
+  return Array.isArray(topic?.cards) ? topic.cards : [];
+}
+
+function flattenLearningModuleCards(module) {
+  const topics = Array.isArray(module?.topics) ? module.topics : [];
+  return topics.flatMap((topic, topicIndex) => getLearningModuleTopicCards(topic).map((card, cardIndex) => ({
+    topic,
+    card,
+    topicIndex,
+    cardIndex
+  })));
+}
+
+function getLearningModulePlayerSnapshot(moduleId = state.activeModuleId) {
+  const module = getLearningModuleById(moduleId);
+  if (!module) {
+    return null;
+  }
+
+  const flatCards = flattenLearningModuleCards(module);
+  if (!flatCards.length) {
+    return { module, flatCards, currentEntry: null, currentFlatIndex: -1 };
+  }
+
+  const currentFlatIndex = flatCards.findIndex((entry) => (
+    entry.topicIndex === state.activeTopicIndex && entry.cardIndex === state.activeCardIndex
+  ));
+  const safeFlatIndex = currentFlatIndex >= 0 ? currentFlatIndex : 0;
+  const currentEntry = flatCards[safeFlatIndex];
+
+  return {
+    module,
+    flatCards,
+    currentEntry,
+    currentFlatIndex: safeFlatIndex
+  };
+}
+
+function openLearningModulePlayer(moduleId) {
+  const module = getLearningModuleById(moduleId);
+  if (!module) {
+    setStatus('That learning module could not be opened right now.', 'error');
+    return;
+  }
+
+  state.activeLearningView = 'modulePlayer';
+  state.activeModuleId = module.id;
+  state.activeTopicIndex = 0;
+  state.activeCardIndex = 0;
+  state.activeSubcardIndex = 0;
+  state.learningModuleCompleted = false;
+  renderLearningModulesSection();
+}
+
+function returnToLearningModuleList() {
+  state.activeLearningView = 'moduleList';
+  state.activeModuleId = '';
+  state.learningModuleCompleted = false;
+  renderLearningModulesSection();
+}
+
+function moveLearningModuleCard(offset) {
+  const snapshot = getLearningModulePlayerSnapshot();
+  if (!snapshot?.flatCards?.length) {
+    return;
+  }
+
+  const nextIndex = snapshot.currentFlatIndex + offset;
+  if (nextIndex < 0) {
+    return;
+  }
+
+  if (nextIndex >= snapshot.flatCards.length) {
+    state.learningModuleCompleted = true;
+    renderLearningModulesSection();
+    return;
+  }
+
+  const nextEntry = snapshot.flatCards[nextIndex];
+  state.activeTopicIndex = nextEntry.topicIndex;
+  state.activeCardIndex = nextEntry.cardIndex;
+  state.activeSubcardIndex = 0;
+  state.learningModuleCompleted = false;
+  renderLearningModulesSection();
+}
+
+function renderLearningModuleTopicPreview(topic) {
+  const cards = getLearningModuleTopicCards(topic);
+  return `
+    <div class="learning-module-topic-preview">
+      <div class="learning-module-topic-preview-header">
+        <div>
+          <h4>${escapeHtml(topic.topic_title || 'Topic')}</h4>
+          ${topic.summary ? `<p class="muted small-text">${escapeHtml(topic.summary)}</p>` : ''}
+        </div>
+        <span class="pill">${escapeHtml(`${cards.length} card${cards.length === 1 ? '' : 's'}`)}</span>
+      </div>
+      ${cards.length
+        ? `
+          <div class="learning-module-card-chip-row">
+            ${cards.map((card, index) => `
+              <div class="learning-module-card-chip">
+                <span class="pill">${index + 1}</span>
+                <div class="stack-xs">
+                  <strong>${escapeHtml(card.title || 'Learning card')}</strong>
+                  ${card.subtopic_title ? `<span class="muted small-text">${escapeHtml(card.subtopic_title)}</span>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `
+        : '<div class="empty-state">Cards will appear here after this topic is populated.</div>'}
+    </div>
+  `;
+}
+
+function renderLearningModulePlayer() {
+  const snapshot = getLearningModulePlayerSnapshot();
+  if (!snapshot?.module) {
+    return '<div class="empty-state">This module is no longer available. Return to the module list and try again.</div>';
+  }
+
+  const { module, flatCards, currentEntry, currentFlatIndex } = snapshot;
+  if (!currentEntry) {
+    return `
+      <div class="learning-module-player empty">
+        <div class="empty-state">This module does not have lesson cards yet.</div>
+        <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
+      </div>
+    `;
+  }
+
+  const { topic, card, topicIndex } = currentEntry;
+  const sections = Array.isArray(card.sections) ? card.sections : [];
+  const cardPosition = currentFlatIndex + 1;
+  const isFirstCard = currentFlatIndex === 0;
+  const isLastCard = currentFlatIndex === flatCards.length - 1;
+
+  return `
+    <article class="learning-module-player surface-card stack-md">
+      <div class="section-heading dashboard-section-heading">
+        <div>
+          <p class="eyebrow">Lesson viewer</p>
+          <h2>${escapeHtml(module.title)}</h2>
+          <p class="muted">Stay inside the desktop workspace while moving through the lesson card-by-card.</p>
+        </div>
+        <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
+      </div>
+
+      <div class="learning-module-progress-grid">
+        <div class="learning-module-progress-tile">
+          <span class="eyebrow">Progress</span>
+          <strong>Card ${cardPosition} of ${flatCards.length}</strong>
+          <span class="muted small-text">Topic ${topicIndex + 1} of ${(module.topics || []).length}</span>
+        </div>
+        <div class="learning-module-progress-tile">
+          <span class="eyebrow">Current topic</span>
+          <strong>${escapeHtml(topic.topic_title || 'Topic')}</strong>
+          <span class="muted small-text">${escapeHtml(card.subtopic_title || card.title || 'Current lesson')}</span>
+        </div>
+      </div>
+
+      <div class="learning-module-player-card">
+        <div class="learning-module-player-card-header">
+          <div class="stack-xs">
+            <span class="pill">${escapeHtml((card.card_type || 'concept').replace(/-/g, ' '))}</span>
+            <h3>${escapeHtml(card.title || 'Learning card')}</h3>
+            ${card.subtopic_title ? `<p class="muted">${escapeHtml(card.subtopic_title)}</p>` : ''}
+          </div>
+        </div>
+        <div class="learning-module-player-sections">
+          ${sections.map((section) => `
+            <section class="learning-module-content-section">
+              <h4>${escapeHtml(section.label || 'Section')}</h4>
+              <p>${escapeHtml(section.body || '')}</p>
+            </section>
+          `).join('')}
+        </div>
+      </div>
+
+      ${state.learningModuleCompleted || isLastCard ? `
+        <div class="callout info">
+          <strong>${state.learningModuleCompleted ? 'Module completed.' : 'Final card reached.'}</strong>
+          <div>${state.learningModuleCompleted ? 'You have reached the end of this guided lesson flow.' : 'Use Next once more to mark the lesson as completed, or go Back to revisit earlier cards.'}</div>
+        </div>
+      ` : ''}
+
+      <div class="learning-module-player-footer">
+        <button type="button" class="secondary" data-action="module-back" ${isFirstCard ? 'disabled' : ''}>Back</button>
+        <div class="learning-module-progress-bar" aria-hidden="true">
+          <span style="width: ${(cardPosition / flatCards.length) * 100}%"></span>
+        </div>
+        <button
+          type="button"
+          data-action="module-next"
+        >
+          ${state.learningModuleCompleted ? 'Completed' : isLastCard ? 'Finish module' : 'Next'}
+        </button>
+      </div>
+    </article>
+  `;
+}
+
 function renderLearningModulesSection() {
   if (!isDesktopWorkspace || !els.learningModulesList) {
     return;
@@ -1152,6 +1367,11 @@ function renderLearningModulesSection() {
     return;
   }
 
+  if (state.activeLearningView === 'modulePlayer' && state.activeModuleId) {
+    els.learningModulesList.innerHTML = renderLearningModulePlayer();
+    return;
+  }
+
   els.learningModulesList.innerHTML = state.learningModules.map((module) => {
     const isExpanded = state.expandedLearningModules.has(module.id);
     const isConnected = status.persistenceAvailable && state.moduleConnectionIds.has(module.id);
@@ -1160,7 +1380,7 @@ function renderLearningModulesSection() {
     const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
       ? 'Hide all users connected'
       : 'Show all users connected';
-    const canConnect = status.persistenceAvailable && Boolean(state.user);
+    const canConnect = status.persistenceAvailable;
     const helperText = !status.persistenceAvailable
       ? 'Connect Me becomes available automatically after Supabase syncing is ready.'
       : !state.user
@@ -1194,7 +1414,7 @@ function renderLearningModulesSection() {
           <div class="learning-module-actions">
             <button
               type="button"
-              class="learning-module-connect-button ${isConnected ? 'is-connected' : ''}"
+              class="learning-module-connect-button secondary ${isConnected ? 'is-connected' : ''}"
               data-action="connect-module"
               data-module-id="${escapeHtml(module.id)}"
               data-module-slug="${escapeHtml(module.slug)}"
@@ -1203,6 +1423,15 @@ function renderLearningModulesSection() {
             >
               <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
               <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : 'Connect Me'}</span>
+            </button>
+            <button
+              type="button"
+              class="learning-module-start-button"
+              data-action="start-module"
+              data-module-id="${escapeHtml(module.id)}"
+              title="Open this module in the center panel and move through it card-by-card."
+            >
+              Start Module
             </button>
             <button
               type="button"
@@ -1224,14 +1453,14 @@ function renderLearningModulesSection() {
                 <div class="section-heading compact">
                   <div>
                     <h3>Topics</h3>
-                    <p class="muted small-text">Expand each module to preview its study path.</p>
+                    <p class="muted small-text">Preview the guided study path before opening the lesson viewer.</p>
                   </div>
                 </div>
                 ${topics.length
                   ? `
-                    <ul class="learning-module-topic-list">
-                      ${topics.map((topic) => `<li>${escapeHtml(topic.topic_title)}</li>`).join('')}
-                    </ul>
+                    <div class="learning-module-topic-list">
+                      ${topics.map((topic) => renderLearningModuleTopicPreview(topic)).join('')}
+                    </div>
                   `
                   : '<div class="empty-state">No topics have been added yet.</div>'}
               </div>
@@ -1260,6 +1489,14 @@ async function loadLearningModules({ force = false } = {}) {
       ...getLearningModulesStatus(),
       ...(modulePayload || {})
     };
+    if (state.activeModuleId && !state.learningModules.some((module) => module.id === state.activeModuleId)) {
+      state.activeLearningView = 'moduleList';
+      state.activeModuleId = '';
+      state.activeTopicIndex = 0;
+      state.activeCardIndex = 0;
+      state.activeSubcardIndex = 0;
+      state.learningModuleCompleted = false;
+    }
 
     if (state.user && state.learningModulesStatus.persistenceAvailable) {
       try {
@@ -1333,6 +1570,15 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   }
 
   if (!state.user) {
+    try {
+      state.user = await getCurrentUser();
+    } catch (_error) {
+      state.user = null;
+    }
+  }
+
+  if (!state.user) {
+    renderLearningModulesSection();
     setStatus('Please sign in to connect yourself to a learning module.', 'error');
     return;
   }
@@ -2231,6 +2477,26 @@ async function bindEvents() {
 
     if (actionButton.dataset.action === 'connect-module') {
       await handleLearningModuleConnect(moduleId, moduleSlug);
+      return;
+    }
+
+    if (actionButton.dataset.action === 'start-module') {
+      openLearningModulePlayer(moduleId);
+      return;
+    }
+
+    if (actionButton.dataset.action === 'return-module-list') {
+      returnToLearningModuleList();
+      return;
+    }
+
+    if (actionButton.dataset.action === 'module-back') {
+      moveLearningModuleCard(-1);
+      return;
+    }
+
+    if (actionButton.dataset.action === 'module-next') {
+      moveLearningModuleCard(1);
       return;
     }
 
