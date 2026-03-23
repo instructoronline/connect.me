@@ -131,6 +131,11 @@ const FETCH_TTL_MS = {
 const REFRESH_DEBOUNCE_MS = 120;
 const POLL_INTERVAL_MS = isDesktopWorkspace ? 45000 : 60000;
 
+const DESKTOP_NAV_WIDTH = {
+  collapsed: 'clamp(72px, 6vw, 88px)',
+  expanded: 'clamp(220px, 22vw, 272px)'
+};
+
 
 function $(id) {
   return document.getElementById(id);
@@ -945,6 +950,13 @@ function renderDesktopWorkspace() {
 function syncDesktopNavState() {
   if (!isDesktopWorkspace || !els.workspaceNav) {
     return;
+  }
+
+  if (els.dashboardShell) {
+    els.dashboardShell.style.setProperty(
+      '--workspace-sidebar-width',
+      state.isNavExpanded ? DESKTOP_NAV_WIDTH.expanded : DESKTOP_NAV_WIDTH.collapsed
+    );
   }
 
   els.workspaceNav.classList.toggle('is-expanded', state.isNavExpanded);
