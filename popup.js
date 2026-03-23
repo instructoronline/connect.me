@@ -1,8 +1,10 @@
 import {
   buildScopedSiteContext,
+  clearPresence,
   deleteAccountData,
   deleteHistory,
   ensureBuiltInConfig,
+  ensureValidSession,
   extractTabInfo,
   fetchActiveUsersForDomain,
   fetchTopSites,
@@ -78,7 +80,8 @@ const state = {
   hasSavedPrivacySettings: false,
   formState: {
     consent: createFormState(),
-    settings: createFormState()
+    settings: createFormState(),
+    dataControls: createFormState()
   },
   presenceAvailability: {
     canUsePresenceToggle: false,
@@ -107,7 +110,10 @@ const state = {
   lastTopSitesSignature: '',
   lastPresenceSignature: '',
   lastProfileSummarySignature: '',
-  profileDrawerOpen: false
+  profileDrawerOpen: false,
+  isNavExpanded: false,
+  activeSection: 'currentSiteTab',
+  supabaseDiagnostics: null
 };
 
 const els = {};
@@ -172,6 +178,55 @@ function formatHistoryModeLabel(mode) {
 
 function getCurrentSiteScope() {
   return buildScopedSiteContext(state.tabInfo, state.privacy);
+}
+
+function maskValue(value = '', { start = 8, end = 6 } = {}) {
+  const stringValue = String(value || '').trim();
+  if (!stringValue) {
+    return 'Unavailable';
+  }
+  if (stringValue.length <= start + end + 3) {
+    return `${stringValue.slice(0, Math.max(0, start))}•••`;
+  }
+  return `${stringValue.slice(0, start)}•••${stringValue.slice(-end)}`;
+}
+
+function maskUrlPreview(url = '') {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${maskValue(parsed.hostname, { start: 6, end: 8 })}`;
+  } catch (_error) {
+    return maskValue(url, { start: 6, end: 8 });
+  }
+}
+
+function buildInfoTile(label, value, note = '', tone = '') {
+  const pillTone = tone ? `pill ${tone}` : 'pill';
+  const resolvedValue = tone ? `<span class="${pillTone}">${escapeHtml(value)}</span>` : `<span class="info-tile-value">${escapeHtml(value)}</span>`;
+  return `
+    <article class="info-tile">
+      <span class="info-tile-label">${escapeHtml(label)}</span>
+      ${tone ? resolvedValue : `<span class="info-tile-value">${escapeHtml(value)}</span>`}
+      ${note ? `<span class="info-tile-note">${escapeHtml(note)}</span>` : ''}
+    </article>
+  `;
+}
+
+function getPresenceVisibilityScopeText() {
+  if (!state.user) {
+    return 'Signed out';
+  }
+  if (state.privacy.invisibleModeEnabled) {
+    return 'Invisible mode';
+  }
+  if (!state.privacy.presenceSharingEnabled) {
+    return 'Hidden from others';
+  }
+  return 'Visible to active members on the same domain';
+}
+
+async function confirmDangerousAction(message) {
+  return window.confirm(message);
 }
 
 function renderCurrentSiteUrlSummary() {
@@ -556,6 +611,12 @@ function renderAuthState() {
   if (els.profileSummaryEditButton) {
     els.profileSummaryEditButton.classList.toggle('hidden', !loggedIn);
   }
+  if (els.editProfileSectionButton) {
+    els.editProfileSectionButton.classList.toggle('hidden', !loggedIn);
+  }
+  if (els.editProfileFromDataControls) {
+    els.editProfileFromDataControls.classList.toggle('hidden', !loggedIn);
+  }
 
   if (isDesktopWorkspace) {
     setProfileDrawerOpen(loggedIn && state.profileDrawerOpen);
@@ -661,6 +722,21 @@ function renderPrivacySettingsForm() {
   syncFormState('settings', els.retentionSelect.value, { clearValidation: true });
 }
 
+function renderDataControlsForm() {
+  if (!isDesktopWorkspace || !els.dataControlsForm) {
+    return;
+  }
+
+  els.dataTrackingEnabled.checked = Boolean(state.privacy.trackingEnabled);
+  els.dataPresenceSharingEnabled.checked = Boolean(state.privacy.presenceSharingEnabled);
+  els.dataInvisibleModeEnabled.checked = Boolean(state.privacy.invisibleModeEnabled);
+  populateSelect(els.dataHistoryMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode);
+  populateSelect(els.dataRetentionSelect, getRetentionOptions(), getRetentionSelectionFromSavedPrivacy());
+  syncFormState('dataControls', els.dataRetentionSelect.value, { clearValidation: true });
+  els.dataControlsValidationMessage.textContent = '';
+  els.dataControlsValidationMessage.classList.add('hidden');
+}
+
 function renderConsentForm() {
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, state.privacy.historyMode || 'domain');
   populateSelect(els.consentRetention, getRetentionOptions(), getRetentionSelectionFromSavedPrivacy());
@@ -672,6 +748,250 @@ function renderConsentForm() {
 
 function renderPrivacyTab() {
   els.privacyPolicyContent.innerHTML = privacyHtml;
+}
+
+async function runSupabaseDiagnostics({ reason = 'manual', recheckConfig = false } = {}) {
+  if (!isDesktopWorkspace || !els.supabaseProjectStatus) {
+    return;
+  }
+
+  const config = recheckConfig ? await ensureBuiltInConfig() : await readConfig();
+  let authSettings = null;
+  let diagnosticsState = 'success';
+  let diagnosticsMessage = 'Supabase client configuration is available.';
+
+  try {
+    const response = await fetch(`${config.url}/auth/v1/settings`, {
+      method: 'GET',
+      headers: { apikey: config.anonKey }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Auth settings request failed (${response.status})`);
+    }
+
+    authSettings = await response.json();
+  } catch (error) {
+    diagnosticsState = 'warning';
+    diagnosticsMessage = error.message || 'Unable to reach Supabase right now.';
+  }
+
+  let sessionState = 'Signed out';
+  let provider = 'Unavailable';
+  let persistence = 'No active session';
+
+  try {
+    const session = await ensureValidSession();
+    if (session?.access_token) {
+      sessionState = 'Active session';
+      provider = state.user?.app_metadata?.provider || state.user?.identities?.[0]?.provider || 'email';
+      persistence = session.refresh_token ? 'Refresh token stored locally' : 'Session only';
+    }
+  } catch (error) {
+    sessionState = 'Session check failed';
+    provider = 'Unavailable';
+    persistence = error.message || 'Unable to verify session persistence';
+  }
+
+  state.supabaseDiagnostics = {
+    checkedAt: new Date().toISOString(),
+    reason,
+    configPresent: Boolean(config.url && config.anonKey),
+    authEnabled: authSettings ? 'Enabled' : 'Unknown',
+    diagnosticsState,
+    diagnosticsMessage,
+    maskedUrl: maskUrlPreview(config.url),
+    anonKeyPresent: Boolean(config.anonKey),
+    maskedAnonKey: maskValue(config.anonKey, { start: 10, end: 6 }),
+    sessionState,
+    provider,
+    persistence
+  };
+
+  renderSupabaseConfiguration();
+}
+
+function renderSupabaseConfiguration() {
+  if (!isDesktopWorkspace || !els.supabaseProjectStatus) {
+    return;
+  }
+
+  const diagnostics = state.supabaseDiagnostics || {
+    checkedAt: '',
+    configPresent: false,
+    authEnabled: 'Unknown',
+    diagnosticsState: 'warning',
+    diagnosticsMessage: 'Diagnostics have not been run yet.',
+    maskedUrl: 'Unavailable',
+    anonKeyPresent: false,
+    maskedAnonKey: 'Unavailable',
+    sessionState: 'Signed out',
+    provider: 'Unavailable',
+    persistence: 'No active session'
+  };
+
+  const tableMarkup = [
+    buildInfoTile('profiles', 'Configured', 'Stores public profile fields and visibility flags.'),
+    buildInfoTile('active_presence', 'Configured', 'Used for live presence / active session style tracking.'),
+    buildInfoTile('browsing_history', 'Configured', 'Stores history according to consent and retention settings.'),
+    buildInfoTile('user_privacy_settings', 'Configured', 'Acts as the consent and privacy settings record.'),
+    buildInfoTile('top_active_sites', 'Derived view', 'Aggregates currently active domains.'),
+    buildInfoTile('shared_sites / site_visibility', 'Not in current build', 'No separate shared-sites table is defined in the shipped schema.')
+  ].join('');
+
+  els.supabaseProjectStatus.innerHTML = [
+    buildInfoTile('Project connection', diagnostics.configPresent ? 'Configured' : 'Disconnected', diagnostics.configPresent ? 'Built-in project details are available to the extension.' : 'Required Supabase configuration is missing.', diagnostics.configPresent ? 'success' : 'error'),
+    buildInfoTile('Project URL preview', diagnostics.maskedUrl, 'Shown in masked form only.'),
+    buildInfoTile('Anon key present', diagnostics.anonKeyPresent ? 'Yes' : 'No', diagnostics.anonKeyPresent ? diagnostics.maskedAnonKey : 'No anon key could be loaded.', diagnostics.anonKeyPresent ? 'success' : 'error'),
+    buildInfoTile('Auth enabled', diagnostics.authEnabled, 'Derived from the Supabase Auth settings endpoint.', diagnostics.authEnabled === 'Enabled' ? 'success' : 'warning')
+  ].join('');
+
+  els.supabaseDiagnosticsStatus.innerHTML = [
+    buildInfoTile('Client initialization', diagnostics.diagnosticsState === 'success' ? 'Healthy' : 'Needs attention', diagnostics.diagnosticsMessage, diagnostics.diagnosticsState === 'success' ? 'success' : 'warning'),
+    buildInfoTile('Last checked', diagnostics.checkedAt ? new Date(diagnostics.checkedAt).toLocaleString() : 'Not checked yet', 'Use the buttons above to refresh or retest the backend.'),
+    buildInfoTile('Readable state', diagnostics.diagnosticsState === 'success' ? 'Connection check passed' : 'Connection check returned an error', diagnostics.reason ? `Trigger: ${diagnostics.reason}` : '')
+  ].join('');
+
+  els.supabaseTablesOverview.innerHTML = tableMarkup;
+  els.supabaseStorageOverview.innerHTML = [
+    buildInfoTile('avatars bucket', 'Expected', 'Profile images upload to the public avatars bucket.'),
+    buildInfoTile('Additional buckets', 'None detected', 'No other storage buckets are referenced by the current workspace code.')
+  ].join('');
+
+  els.supabaseAuthSummary.innerHTML = [
+    buildInfoTile('Current user session', diagnostics.sessionState, state.user?.email ? `User: ${state.user.email}` : 'Sign in to see session-backed state.'),
+    buildInfoTile('Provider type', diagnostics.provider, 'Derived from the active user session when available.'),
+    buildInfoTile('Login persistence', diagnostics.persistence, 'Sessions are stored locally and refreshed when possible.')
+  ].join('');
+
+  els.supabaseEnvStatus.innerHTML = [
+    buildInfoTile('Built-in config URL', diagnostics.configPresent ? 'Present' : 'Missing', 'This build uses extension-bundled configuration rather than runtime environment injection.', diagnostics.configPresent ? 'success' : 'error'),
+    buildInfoTile('Built-in anon key', diagnostics.anonKeyPresent ? 'Present' : 'Missing', 'The key is masked in the UI and never shown in plaintext.', diagnostics.anonKeyPresent ? 'success' : 'error'),
+    buildInfoTile('Runtime secrets', 'Protected', 'No sensitive Supabase values are rendered in plaintext in the workspace UI.')
+  ].join('');
+}
+
+function renderProfileWorkspaceSection() {
+  if (!isDesktopWorkspace || !els.profileWorkspaceSummary) {
+    return;
+  }
+
+  if (!state.user) {
+    els.profileWorkspaceSummary.innerHTML = '<div class="empty-state">Sign in to open your profile editor and review field readiness.</div>';
+    els.profileVisibilitySummary.innerHTML = '<div class="empty-state">Visibility settings appear after sign-in.</div>';
+    return;
+  }
+
+  const complete = hasCompleteProfile(state.profile);
+  const visibility = normalizeProfileVisibility(state.profile || {});
+  const profileSummaryTiles = [
+    buildInfoTile('Profile status', complete ? 'Complete' : 'Incomplete', complete ? 'Your profile is ready for presence sharing.' : 'Add any missing required fields or avatar to finish setup.', complete ? 'success' : 'warning'),
+    buildInfoTile('Display name', state.profile?.display_name || `${state.profile?.first_name || ''} ${state.profile?.last_name || ''}`.trim() || 'Not set', 'Shown according to your visibility choices.'),
+    buildInfoTile('Avatar uploaded', state.profile?.avatar_url ? 'Yes' : 'No', state.profile?.avatar_url ? 'Avatar is available in the avatars bucket.' : 'Upload an avatar to complete your profile.', state.profile?.avatar_url ? 'success' : 'warning')
+  ].join('');
+  els.profileWorkspaceSummary.innerHTML = `<div class="info-grid">${profileSummaryTiles}</div>`;
+
+  const visibilityTiles = [
+    buildInfoTile('Avatar', visibility.share_avatar ? 'Public' : 'Private'),
+    buildInfoTile('First name', visibility.share_first_name ? 'Public' : 'Private'),
+    buildInfoTile('Last name', visibility.share_last_name ? 'Public' : 'Private'),
+    buildInfoTile('Work', visibility.share_place_of_work ? 'Public' : 'Private'),
+    buildInfoTile('Education', visibility.share_education ? 'Public' : 'Private'),
+    buildInfoTile('Location', visibility.share_current_location ? 'Public' : 'Private'),
+    buildInfoTile('Bio', visibility.share_bio ? 'Public' : 'Private')
+  ].join('');
+  els.profileVisibilitySummary.innerHTML = visibilityTiles;
+}
+
+function renderDataControlsSection() {
+  if (!isDesktopWorkspace || !els.dataPresenceSummary) {
+    return;
+  }
+
+  const retentionLabel = normalizeRetentionSelection(`${state.privacy.retentionValue}|${state.privacy.retentionUnit}`).displayLabel || `${state.privacy.retentionValue} ${state.privacy.retentionUnit}`;
+
+  els.dataPresenceSummary.innerHTML = [
+    buildInfoTile('Presence sharing', state.privacy.presenceSharingEnabled ? 'Enabled' : 'Disabled', state.presenceAvailability.note, state.privacy.presenceSharingEnabled ? 'success' : 'warning'),
+    buildInfoTile('Current active site', state.tabInfo?.domain || 'No website detected', 'Active site detail respects your tracking scope.'),
+    buildInfoTile('Visibility scope', getPresenceVisibilityScopeText(), 'Invisible Mode overrides visible presence sharing.')
+  ].join('');
+
+  els.dataConsentSummary.innerHTML = [
+    buildInfoTile('Explicit consent', state.privacy.consentGranted ? 'Granted' : 'Not granted', state.privacy.consentGranted ? 'Consent has been saved for this account.' : 'Save consent before tracking or presence can run.', state.privacy.consentGranted ? 'success' : 'warning'),
+    buildInfoTile('Tracking state', state.privacy.trackingEnabled ? 'On' : 'Off', `History scope: ${formatHistoryModeLabel(state.privacy.historyMode)}`),
+    buildInfoTile('Consent timestamps', 'Not yet stored', 'This build does not currently persist consent timestamps in the shipped schema.')
+  ].join('');
+
+  const visibility = normalizeProfileVisibility(state.profile || {});
+  els.dataProfileSummary.innerHTML = [
+    buildInfoTile('Public fields', Object.values(visibility).filter(Boolean).length ? `${Object.values(visibility).filter(Boolean).length} shared` : 'None shared', 'Use Edit Profile to change what others can see.'),
+    buildInfoTile('Profile completeness', hasCompleteProfile(state.profile) ? 'Ready for presence' : 'Needs attention', hasCompleteProfile(state.profile) ? 'Required profile fields are complete.' : 'Complete required fields and upload an avatar.', hasCompleteProfile(state.profile) ? 'success' : 'warning'),
+    buildInfoTile('Quick link', 'Open Edit Profile', 'Use the button above to open the profile drawer.')
+  ].join('');
+
+  els.dataRetentionSummary.innerHTML = [
+    buildInfoTile('Retention window', retentionLabel, 'Expired browsing history is purged according to the selected retention period.'),
+    buildInfoTile('Stored data', state.privacy.trackingEnabled ? 'History + presence preferences' : 'Presence preferences only', 'Connect.Me stores only the data needed for enabled features.'),
+    buildInfoTile('Destructive actions', 'Require confirmation', 'Clear, reset, and delete actions never run silently.')
+  ].join('');
+}
+
+function renderDesktopWorkspace() {
+  renderProfileWorkspaceSection();
+  renderDataControlsSection();
+  renderSupabaseConfiguration();
+}
+
+function syncDesktopNavState() {
+  if (!isDesktopWorkspace || !els.workspaceNav) {
+    return;
+  }
+
+  els.workspaceNav.classList.toggle('is-expanded', state.isNavExpanded);
+  els.workspaceNav.classList.toggle('is-collapsed', !state.isNavExpanded);
+  if (els.navRailToggle) {
+    els.navRailToggle.setAttribute('aria-expanded', String(state.isNavExpanded));
+    els.navRailToggle.setAttribute('aria-label', state.isNavExpanded ? 'Collapse navigation' : 'Expand navigation');
+  }
+
+  document.querySelectorAll('.workspace-nav-item').forEach((button) => {
+    const isActive = button.dataset.section === state.activeSection;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-current', isActive ? 'page' : 'false');
+  });
+
+  document.querySelectorAll('.workspace-main-shell .tab-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.id === state.activeSection);
+  });
+}
+
+function setDesktopNavExpanded(nextExpanded) {
+  if (!isDesktopWorkspace) {
+    return;
+  }
+  state.isNavExpanded = Boolean(nextExpanded);
+  syncDesktopNavState();
+}
+
+function setActiveDesktopSection(sectionId, { openDrawer = false } = {}) {
+  if (!isDesktopWorkspace) {
+    return;
+  }
+
+  state.activeSection = sectionId;
+  syncDesktopNavState();
+
+  if (sectionId === 'editProfileTab') {
+    setProfileDrawerOpen(openDrawer || Boolean(state.user));
+  } else if (state.profileDrawerOpen) {
+    setProfileDrawerOpen(false);
+  }
+
+  if (sectionId === 'supabaseConfigTab') {
+    runSupabaseDiagnostics({ reason: 'nav-section-opened' }).catch((error) => {
+      setStatus(error.message || 'Unable to refresh Supabase diagnostics.', 'error');
+    });
+  }
 }
 
 function renderTopSites() {
@@ -993,10 +1313,16 @@ async function refreshState({ reason = 'manual', force = false } = {}) {
   renderProfileSummary();
   renderConsentForm();
   renderPrivacySettingsForm();
+  renderDataControlsForm();
   renderPresenceControls();
   renderCurrentSiteUrlSummary();
+  renderDesktopWorkspace();
   await renderActiveUsers({ refreshVersion, force });
   await loadTopSites({ reason, refreshVersion, force });
+
+  if (isDesktopWorkspace) {
+    await runSupabaseDiagnostics({ reason });
+  }
 }
 
 async function refreshContextState({ reason = 'context-sync', force = false } = {}) {
@@ -1011,6 +1337,7 @@ async function refreshContextState({ reason = 'context-sync', force = false } = 
   renderDomainBadge();
   renderCurrentSiteUrlSummary();
   renderTopSites();
+  renderDesktopWorkspace();
   await renderActiveUsers({ refreshVersion, force: force || previousDomain !== nextDomain });
   if (state.detailDomain && (force || state.detailDomain === nextDomain || previousDomain !== nextDomain)) {
     await openTopSiteDetail(state.detailDomain, { force });
@@ -1054,14 +1381,37 @@ function validateProfilePayload(profile) {
 }
 
 function buildPrivacyPayload(source) {
-  const retentionSelection = source === 'consent'
-    ? getRetentionSelectionSnapshot(els.consentRetention)
-    : getRetentionSelectionSnapshot(els.retentionSelect);
+  const fieldMap = source === 'consent'
+    ? {
+        retentionSelect: els.consentRetention,
+        trackingEnabled: els.consentTrackingEnabled,
+        historyMode: els.consentHistoryMode,
+        presenceSharingEnabled: els.consentPresenceEnabled,
+        invisibleModeEnabled: els.consentInvisibleMode,
+        consentGranted: { checked: true }
+      }
+    : source === 'dataControls'
+      ? {
+          retentionSelect: els.dataRetentionSelect,
+          trackingEnabled: els.dataTrackingEnabled,
+          historyMode: els.dataHistoryMode,
+          presenceSharingEnabled: els.dataPresenceSharingEnabled,
+          invisibleModeEnabled: els.dataInvisibleModeEnabled,
+          consentGranted: { checked: state.privacy.consentGranted }
+        }
+      : {
+          retentionSelect: els.retentionSelect,
+          trackingEnabled: els.trackingEnabled,
+          historyMode: els.historyMode,
+          presenceSharingEnabled: els.presenceSharingEnabled,
+          invisibleModeEnabled: els.invisibleModeEnabled,
+          consentGranted: els.trackingConsent
+        };
+
+  const retentionSelection = getRetentionSelectionSnapshot(fieldMap.retentionSelect);
   logStructured('log', '[Connect.Me] Retention dropdown raw value', { source, retentionSelection });
   const retention = syncFormState(source, retentionSelection, { clearValidation: true });
-  const requestedPresenceSharingEnabled = source === 'consent'
-    ? els.consentPresenceEnabled.checked
-    : els.presenceSharingEnabled.checked;
+  const requestedPresenceSharingEnabled = fieldMap.presenceSharingEnabled.checked;
 
   if (!retention) {
     const message = `Unable to parse the selected retention window (${formatRetentionSelectionForMessage(retentionSelection)}). Please choose one of the supported values, such as 1 hour, 2 hours, 12 hours, 1 day, 30 days, 1 month, or 30 months.`;
@@ -1072,13 +1422,13 @@ function buildPrivacyPayload(source) {
   setFormError(source, '');
 
   return {
-    consentGranted: source === 'consent' ? true : els.trackingConsent.checked,
-    trackingEnabled: source === 'consent' ? els.consentTrackingEnabled.checked : els.trackingEnabled.checked,
-    historyMode: source === 'consent' ? els.consentHistoryMode.value : els.historyMode.value,
+    consentGranted: Boolean(fieldMap.consentGranted.checked),
+    trackingEnabled: fieldMap.trackingEnabled.checked,
+    historyMode: fieldMap.historyMode.value,
     retentionUnit: retention.retentionUnit,
     retentionValue: retention.retentionValue,
     presenceSharingEnabled: requestedPresenceSharingEnabled && hasCompleteProfile(state.profile),
-    invisibleModeEnabled: source === 'consent' ? els.consentInvisibleMode.checked : els.invisibleModeEnabled.checked
+    invisibleModeEnabled: fieldMap.invisibleModeEnabled.checked
   };
 }
 
@@ -1095,7 +1445,9 @@ async function syncSavedPrivacyState(savedPrivacy, source) {
   renderAuthState();
   renderConsentForm();
   renderPrivacySettingsForm();
+  renderDataControlsForm();
   renderPresenceControls();
+  renderDesktopWorkspace();
   await renderActiveUsers({ refreshVersion });
   await loadTopSites({ reason: `${source}-privacy-sync`, refreshVersion });
 }
@@ -1103,7 +1455,9 @@ async function syncSavedPrivacyState(savedPrivacy, source) {
 async function savePrivacy(source) {
   const requestedPresenceSharingEnabled = source === 'consent'
     ? els.consentPresenceEnabled.checked
-    : els.presenceSharingEnabled.checked;
+    : source === 'dataControls'
+      ? els.dataPresenceSharingEnabled.checked
+      : els.presenceSharingEnabled.checked;
   const payload = buildPrivacyPayload(source);
   logStructured('log', '[Connect.Me] Privacy settings save payload', { source, payload });
 
@@ -1381,7 +1735,12 @@ function bindElements() {
     'topSiteDetailCard', 'topSiteDetailHeading', 'topSiteDetailSubheading', 'topSiteUsersList', 'closeTopSiteDetail', 'configForm', 'supabaseUrl',
     'supabaseAnonKey', 'privacySettingsForm', 'trackingConsent', 'trackingEnabled', 'historyMode', 'retentionSelect',
     'presenceSharingEnabled', 'invisibleModeEnabled', 'privacyValidationMessage', 'deleteHistoryButton', 'deleteAccountButton',
-    'privacyPolicyContent'
+    'privacyPolicyContent', 'workspaceNav', 'navRailToggle', 'editProfileSectionButton', 'profileWorkspaceSummary', 'profileVisibilitySummary',
+    'refreshSupabaseDiagnostics', 'testSupabaseConnection', 'recheckSupabaseConfig', 'supabaseProjectStatus', 'supabaseDiagnosticsStatus',
+    'supabaseTablesOverview', 'supabaseStorageOverview', 'supabaseAuthSummary', 'supabaseEnvStatus', 'dataControlsForm',
+    'dataPresenceSharingEnabled', 'dataInvisibleModeEnabled', 'dataTrackingEnabled', 'dataHistoryMode', 'dataRetentionSelect',
+    'dataControlsValidationMessage', 'dataPresenceSummary', 'dataConsentSummary', 'dataProfileSummary', 'dataRetentionSummary',
+    'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls'
   ].forEach((id) => {
     els[id] = $(id);
   });
@@ -1395,16 +1754,31 @@ function bindElements() {
 }
 
 async function bindEvents() {
-  document.querySelectorAll('.tab-link').forEach((button) => {
-    button.addEventListener('click', () => switchTab(button.dataset.tab));
-  });
+  if (isDesktopWorkspace) {
+    document.querySelectorAll('.workspace-nav-item').forEach((button) => {
+      button.addEventListener('click', () => {
+        setActiveDesktopSection(button.dataset.section, { openDrawer: button.dataset.section === 'editProfileTab' });
+      });
+    });
+    els.navRailToggle?.addEventListener('click', () => {
+      setDesktopNavExpanded(!state.isNavExpanded);
+    });
+  } else {
+    document.querySelectorAll('.tab-link').forEach((button) => {
+      button.addEventListener('click', () => switchTab(button.dataset.tab));
+    });
+  }
 
   els.openDesktopButton?.addEventListener('click', async () => {
     await openDesktopWorkspace();
   });
 
-  [els.editProfileButton, els.profileSummaryEditButton].filter(Boolean).forEach((button) => {
+  [els.editProfileButton, els.profileSummaryEditButton, els.editProfileSectionButton, els.editProfileFromDataControls].filter(Boolean).forEach((button) => {
     button.addEventListener('click', () => {
+      if (isDesktopWorkspace) {
+        setActiveDesktopSection('editProfileTab', { openDrawer: true });
+        return;
+      }
       setProfileDrawerOpen(true);
     });
   });
@@ -1521,11 +1895,15 @@ async function bindEvents() {
 
   els.profileForm.addEventListener('submit', handleProfileSubmit);
 
-  els.configForm.addEventListener('submit', async (event) => {
+  els.configForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const config = await readConfig();
-    els.supabaseUrl.value = config.url || '';
-    els.supabaseAnonKey.value = config.anonKey || '';
+    if (els.supabaseUrl) {
+      els.supabaseUrl.value = maskUrlPreview(config.url || '');
+    }
+    if (els.supabaseAnonKey) {
+      els.supabaseAnonKey.value = maskValue(config.anonKey || '', { start: 10, end: 6 });
+    }
     setStatus('Built-in Supabase configuration loaded successfully.', 'success');
   });
 
@@ -1549,38 +1927,114 @@ async function bindEvents() {
     }
   });
 
+  els.dataControlsForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setStatus('Saving data controls…');
+    try {
+      const { presenceDeferred } = await savePrivacy('dataControls');
+      setStatus(
+        presenceDeferred
+          ? 'Data controls saved. Presence remains off until your full profile is complete.'
+          : 'Data controls saved successfully.',
+        'success'
+      );
+    } catch (error) {
+      const message = error.message || 'Unable to save data controls.';
+      els.dataControlsValidationMessage.textContent = message;
+      els.dataControlsValidationMessage.classList.remove('hidden');
+      setStatus(message, 'error');
+    }
+  });
+
   [
     ['consent', els.consentRetention],
-    ['settings', els.retentionSelect]
+    ['settings', els.retentionSelect],
+    ['dataControls', els.dataRetentionSelect]
   ].forEach(([source, select]) => {
-    select.addEventListener('change', () => {
+    select?.addEventListener('change', () => {
       const selection = getRetentionSelectionSnapshot(select);
       const parsed = syncFormState(source, selection, { clearValidation: true });
       if (!parsed) {
         const message = `Unable to parse the selected retention window (${formatRetentionSelectionForMessage(selection)}). Please choose a supported retention value.`;
-        setInlineValidation(message);
+        if (source === 'dataControls' && els.dataControlsValidationMessage) {
+          els.dataControlsValidationMessage.textContent = message;
+          els.dataControlsValidationMessage.classList.remove('hidden');
+        } else {
+          setInlineValidation(message);
+        }
         setFormError(source, message);
       }
     });
   });
 
-  [els.presenceQuickToggle, els.presenceSharingInline].forEach((input) => {
+  [els.presenceQuickToggle, els.presenceSharingInline].filter(Boolean).forEach((input) => {
     input.addEventListener('change', async (event) => {
       await togglePresence(event.target.checked);
     });
   });
 
+  els.clearPresenceButton?.addEventListener('click', async () => {
+    const confirmed = await confirmDangerousAction('Clear your current presence data from Connect.Me?');
+    if (!confirmed) {
+      return;
+    }
+    setStatus('Clearing presence data…');
+    try {
+      await clearPresence();
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'manual-clear' });
+      await refreshState({ reason: 'presence-cleared', force: true });
+      setStatus('Presence data cleared successfully.', 'success');
+    } catch (error) {
+      setStatus(error.message || 'Unable to clear presence data.', 'error');
+    }
+  });
+
   els.deleteHistoryButton.addEventListener('click', async () => {
+    const confirmed = await confirmDangerousAction('Clear your stored browsing history from Connect.Me?');
+    if (!confirmed) {
+      return;
+    }
     setStatus('Deleting stored history…');
     try {
       await deleteHistory();
+      await refreshState({ reason: 'history-deleted', force: true });
       setStatus('Stored history deleted successfully', 'success');
     } catch (error) {
       setStatus(error.message, 'error');
     }
   });
 
+  els.resetConsentButton?.addEventListener('click', async () => {
+    const confirmed = await confirmDangerousAction('Reset consent preferences and disable tracking/presence settings?');
+    if (!confirmed) {
+      return;
+    }
+    setStatus('Resetting consent preferences…');
+    try {
+      const resetPrivacy = {
+        ...getDefaultPrivacySettings(),
+        retentionUnit: state.privacy.retentionUnit,
+        retentionValue: state.privacy.retentionValue,
+        historyMode: 'domain'
+      };
+      await upsertPrivacySettings(resetPrivacy);
+      chrome.runtime.sendMessage({ type: 'CLEAR_PRESENCE', reason: 'consent-reset' });
+      await refreshState({ reason: 'consent-reset', force: true });
+      setStatus('Consent preferences reset successfully.', 'success');
+    } catch (error) {
+      setStatus(error.message || 'Unable to reset consent preferences.', 'error');
+    }
+  });
+
+  els.exportDataButton?.addEventListener('click', () => {
+    setStatus('Export my data is not yet implemented in this build. Add an export endpoint to enable this action.', 'info');
+  });
+
   els.deleteAccountButton.addEventListener('click', async () => {
+    const confirmed = await confirmDangerousAction('Delete all Connect.Me account data for this user? This cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
     setStatus('Deleting account data…');
     try {
       await deleteAccountData();
@@ -1592,6 +2046,24 @@ async function bindEvents() {
     } catch (error) {
       setStatus(error.message, 'error');
     }
+  });
+
+  els.refreshSupabaseDiagnostics?.addEventListener('click', async () => {
+    setStatus('Refreshing Supabase diagnostics…');
+    await runSupabaseDiagnostics({ reason: 'refresh-diagnostics' });
+    setStatus('Supabase diagnostics refreshed.', 'success');
+  });
+
+  els.testSupabaseConnection?.addEventListener('click', async () => {
+    setStatus('Testing Supabase connection…');
+    await runSupabaseDiagnostics({ reason: 'test-connection' });
+    setStatus('Supabase connection test finished.', 'success');
+  });
+
+  els.recheckSupabaseConfig?.addEventListener('click', async () => {
+    setStatus('Rechecking Supabase configuration…');
+    await runSupabaseDiagnostics({ reason: 'recheck-config', recheckConfig: true });
+    setStatus('Supabase configuration rechecked.', 'success');
   });
 
   els.refreshTopSites.addEventListener('click', async () => {
@@ -1612,19 +2084,30 @@ async function initialize() {
   bindElements();
   renderPrivacyTab();
   const config = await ensureBuiltInConfig();
-  els.supabaseUrl.value = config.url || '';
-  els.supabaseAnonKey.value = config.anonKey || '';
-  els.supabaseUrl.readOnly = true;
-  els.supabaseAnonKey.readOnly = true;
+  if (els.supabaseUrl) {
+    els.supabaseUrl.value = maskUrlPreview(config.url || '');
+    els.supabaseUrl.readOnly = true;
+  }
+  if (els.supabaseAnonKey) {
+    els.supabaseAnonKey.value = maskValue(config.anonKey || '', { start: 10, end: 6 });
+    els.supabaseAnonKey.readOnly = true;
+  }
   populateSelect(els.historyMode, HISTORY_MODE_OPTIONS, 'domain');
   populateSelect(els.retentionSelect, getRetentionOptions(), '7|days');
   populateSelect(els.consentHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
   populateSelect(els.consentRetention, getRetentionOptions(), '7|days');
+  if (els.dataHistoryMode) {
+    populateSelect(els.dataHistoryMode, HISTORY_MODE_OPTIONS, 'domain');
+  }
+  if (els.dataRetentionSelect) {
+    populateSelect(els.dataRetentionSelect, getRetentionOptions(), '7|days');
+  }
   await bindEvents();
   bindRuntimeListeners();
   startTopSitesPolling();
   if (isDesktopWorkspace) {
-    document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.add('active'));
+    setDesktopNavExpanded(false);
+    setActiveDesktopSection(state.activeSection);
   }
   await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened', force: true });
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
