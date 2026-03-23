@@ -106,7 +106,8 @@ const state = {
   lastRenderedDomain: '',
   lastTopSitesSignature: '',
   lastPresenceSignature: '',
-  lastProfileSummarySignature: ''
+  lastProfileSummarySignature: '',
+  profileDrawerOpen: false
 };
 
 const els = {};
@@ -517,11 +518,51 @@ function renderProfilePrompt() {
     : 'Your profile is incomplete. Presence sharing stays disabled until all required profile fields are completed.';
 }
 
+function setProfileDrawerOpen(nextOpen) {
+  if (!isDesktopWorkspace || !els.profileDrawer || !els.profileDrawerBackdrop || !els.profilePanel) {
+    return;
+  }
+
+  const loggedIn = Boolean(state.user);
+  const shouldOpen = Boolean(nextOpen && loggedIn);
+  state.profileDrawerOpen = shouldOpen;
+
+  els.profileDrawer.classList.toggle('is-open', shouldOpen);
+  els.profileDrawer.setAttribute('aria-hidden', String(!shouldOpen));
+  els.profileDrawerBackdrop.classList.toggle('is-visible', shouldOpen);
+  els.profileDrawerBackdrop.setAttribute('aria-hidden', String(!shouldOpen));
+  els.profilePanel.classList.toggle('hidden', !loggedIn);
+  document.body.classList.toggle('drawer-open', shouldOpen);
+
+  if (els.dashboardShell) {
+    if (shouldOpen) {
+      els.dashboardShell.setAttribute('inert', '');
+      els.dashboardShell.setAttribute('aria-hidden', 'true');
+    } else {
+      els.dashboardShell.removeAttribute('inert');
+      els.dashboardShell.removeAttribute('aria-hidden');
+    }
+  }
+}
+
 function renderAuthState() {
   const loggedIn = Boolean(state.user);
   els.authPanel.classList.toggle('hidden', loggedIn);
-  els.profilePanel.classList.toggle('hidden', !loggedIn);
   els.consentPanel.classList.toggle('hidden', !loggedIn || state.hasSavedPrivacySettings);
+
+  if (els.editProfileButton) {
+    els.editProfileButton.classList.toggle('hidden', !loggedIn);
+  }
+  if (els.profileSummaryEditButton) {
+    els.profileSummaryEditButton.classList.toggle('hidden', !loggedIn);
+  }
+
+  if (isDesktopWorkspace) {
+    setProfileDrawerOpen(loggedIn && state.profileDrawerOpen);
+    return;
+  }
+
+  els.profilePanel.classList.toggle('hidden', !loggedIn);
 }
 
 function renderProfileForm() {
@@ -1151,6 +1192,9 @@ async function handleProfileSubmit(event) {
     els.profileImage.value = '';
     invalidatePresenceCaches();
     await refreshState({ reason: 'profile-updated', force: true });
+    if (isDesktopWorkspace) {
+      setProfileDrawerOpen(false);
+    }
     const successMessage = hasCompleteProfile(state.profile)
       ? 'Profile and visibility settings saved successfully.'
       : 'Profile and visibility settings saved successfully. Add a profile photo and any remaining required details to enable presence.';
@@ -1336,6 +1380,13 @@ function bindElements() {
   ].forEach((id) => {
     els[id] = $(id);
   });
+
+  els.dashboardShell = document.querySelector('.desktop-dashboard');
+  els.profileDrawer = $('profileDrawer');
+  els.profileDrawerBackdrop = $('profileDrawerBackdrop');
+  els.editProfileButton = $('editProfileButton');
+  els.profileSummaryEditButton = $('profileSummaryEditButton');
+  els.closeProfileDrawerButton = $('closeProfileDrawerButton');
 }
 
 async function bindEvents() {
@@ -1345,6 +1396,26 @@ async function bindEvents() {
 
   els.openDesktopButton?.addEventListener('click', async () => {
     await openDesktopWorkspace();
+  });
+
+  [els.editProfileButton, els.profileSummaryEditButton].filter(Boolean).forEach((button) => {
+    button.addEventListener('click', () => {
+      setProfileDrawerOpen(true);
+    });
+  });
+
+  els.closeProfileDrawerButton?.addEventListener('click', () => {
+    setProfileDrawerOpen(false);
+  });
+
+  els.profileDrawerBackdrop?.addEventListener('click', () => {
+    setProfileDrawerOpen(false);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && state.profileDrawerOpen) {
+      setProfileDrawerOpen(false);
+    }
   });
 
   els.copyCurrentUrlButton?.addEventListener('click', async () => {
@@ -1391,6 +1462,7 @@ async function bindEvents() {
     setStatus('Signing out…');
     try {
       await signOut();
+      setProfileDrawerOpen(false);
       state.profile = null;
       state.user = null;
       invalidatePresenceCaches();
