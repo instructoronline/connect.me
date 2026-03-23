@@ -8,69 +8,94 @@
   </head>
   <body class="page-body desktop-body light-theme">
     <main class="dashboard-shell desktop-dashboard">
-      <aside class="workspace-icon-rail" aria-label="Workspace shortcuts">
-        <div class="rail-brand-badge">C</div>
-        <div class="workspace-icon-stack">
-          <button type="button" class="rail-icon-button is-active" aria-label="Overview">⌂</button>
-          <button type="button" class="rail-icon-button" aria-label="Current site">◫</button>
-          <button type="button" class="rail-icon-button" aria-label="Community">◎</button>
-          <button type="button" class="rail-icon-button" aria-label="Settings">⚙</button>
+      <aside id="workspaceNav" class="workspace-nav-shell is-collapsed" aria-label="Workspace navigation">
+        <div class="workspace-nav-top stack-md">
+          <div class="workspace-nav-header">
+            <div class="rail-brand-badge">C</div>
+            <button
+              id="navRailToggle"
+              type="button"
+              class="workspace-nav-toggle secondary small"
+              aria-label="Expand navigation"
+              aria-expanded="false"
+            >
+              <span class="workspace-nav-toggle-icon">☰</span>
+              <span class="workspace-nav-toggle-label">Expand</span>
+            </button>
+          </div>
+
+          <section class="workspace-nav-summary workspace-nav-copy-card soft-card">
+            <div class="stack-sm">
+              <div>
+                <p class="eyebrow">Connect.Me desktop workspace</p>
+                <h1>Welcome to your workspace.</h1>
+                <p class="subtitle">Switch between focused workspace sections from the foldout rail without stacking every panel in the same scroll view.</p>
+              </div>
+              <div class="hero-actions sidebar-hero-actions">
+                <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
+                  <span>Presence</span>
+                  <input id="presenceQuickToggle" type="checkbox" />
+                </label>
+                <button id="editProfileButton" type="button" class="secondary small">Edit profile</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-nav-summary workspace-status-card">
+            <p class="small-text muted">Current synchronized site</p>
+            <strong id="currentDomainBadge" class="sidebar-domain break-anywhere">No website detected</strong>
+            <p class="muted small-text">Background-synced context stays visible while the extension continues tracking your active site state.</p>
+          </section>
+
+          <nav class="workspace-nav-list" aria-label="Desktop workspace sections">
+            <button type="button" class="workspace-nav-item is-active" data-section="currentSiteTab" aria-current="page">
+              <span class="workspace-nav-icon" aria-hidden="true">◫</span>
+              <span class="workspace-nav-label">Current Site</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="topSitesTab">
+              <span class="workspace-nav-icon" aria-hidden="true">◎</span>
+              <span class="workspace-nav-label">Top Sites</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="settingsTab">
+              <span class="workspace-nav-icon" aria-hidden="true">⚙</span>
+              <span class="workspace-nav-label">Settings</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="privacyTab">
+              <span class="workspace-nav-icon" aria-hidden="true">🛡</span>
+              <span class="workspace-nav-label">Privacy Policy</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="editProfileTab">
+              <span class="workspace-nav-icon" aria-hidden="true">✎</span>
+              <span class="workspace-nav-label">Edit Profile</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="supabaseConfigTab">
+              <span class="workspace-nav-icon" aria-hidden="true">☁</span>
+              <span class="workspace-nav-label">Supabase Configuration</span>
+            </button>
+            <button type="button" class="workspace-nav-item" data-section="dataControlsTab">
+              <span class="workspace-nav-icon" aria-hidden="true">▣</span>
+              <span class="workspace-nav-label">Data Controls</span>
+            </button>
+          </nav>
         </div>
-        <div class="workspace-icon-stack workspace-icon-stack-bottom">
-          <div class="rail-status-dot"></div>
+
+        <div class="workspace-nav-bottom">
+          <div class="workspace-presence-chip">
+            <div class="rail-status-dot"></div>
+            <span class="workspace-nav-label">Workspace online</span>
+          </div>
           <div class="rail-user-badge">CM</div>
         </div>
       </aside>
 
-      <aside class="workspace-sidebar">
-        <section class="workspace-brand-card soft-card">
-          <div class="stack-md">
-            <div>
-              <p class="eyebrow">Connect.Me desktop workspace</p>
-              <h1>Welcome to your workspace.</h1>
-              <p class="subtitle">A cleaner three-column dashboard inspired by the attached references, with primary content in the center and supporting controls on the side.</p>
-            </div>
-            <div class="hero-actions sidebar-hero-actions">
-              <label class="mini-toggle hero-toggle" for="presenceQuickToggle">
-                <span>Presence</span>
-                <input id="presenceQuickToggle" type="checkbox" />
-              </label>
-              <button id="editProfileButton" type="button" class="secondary small">Edit profile</button>
-              <button id="openDesktopButton" type="button" class="secondary small">Open workspace</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="workspace-status-card">
-          <p class="small-text muted">Current synchronized site</p>
-          <strong id="currentDomainBadge" class="sidebar-domain break-anywhere">No website detected</strong>
-          <p class="muted small-text">Owned by the background service worker and kept visible even while the popup is closed.</p>
-        </section>
-
-        <nav class="tab-bar dashboard-nav sidebar-nav" aria-label="Desktop workspace navigation">
-          <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
-          <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
-          <button class="tab-link" data-tab="settingsTab">Settings</button>
-          <button class="tab-link" data-tab="privacyTab">Privacy</button>
-        </nav>
-
-        <section class="sidebar-note-card">
-          <div class="stack-sm">
-            <p class="eyebrow">Workspace focus</p>
-            <h3>Dashboard flow</h3>
-            <p class="muted small-text">Use the center column for current-site awareness and discovery while the right rail handles profile editing, consent, and controls.</p>
-          </div>
-        </section>
-      </aside>
-
-      <section class="workspace-main">
+      <section class="workspace-main workspace-main-shell">
         <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
 
-        <section class="overview-metrics">
+        <section class="overview-metrics workspace-main-metrics">
           <article class="metric-card">
             <span class="metric-label">Workspace mode</span>
             <span class="metric-value">Desktop</span>
-            <span class="metric-subtitle">Persistent dashboard synced from the background worker</span>
+            <span class="metric-subtitle">Left rail stays persistent while content swaps section-by-section</span>
           </article>
           <article class="metric-card">
             <span class="metric-label">Current site</span>
@@ -80,12 +105,63 @@
           <article class="metric-card">
             <span class="metric-label">Privacy model</span>
             <span class="metric-value">Consent</span>
-            <span class="metric-subtitle">Tracking and presence only run when enabled by the user</span>
+            <span class="metric-subtitle">Tracking and presence only run when explicitly enabled</span>
           </article>
         </section>
 
-        <section class="desktop-overview-grid">
-          <section id="currentSiteTab" class="tab-panel active workspace-anchor-card">
+        <div class="workspace-main-stack">
+          <section id="authPanel" class="workspace-card hidden workspace-utility-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Authentication</p>
+                <h2>Sign in to begin</h2>
+                <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
+              </div>
+            </div>
+            <form id="authForm" class="stack-md">
+              <label>
+                Email address
+                <input id="authEmail" type="email" autocomplete="username" required />
+              </label>
+              <label>
+                Password
+                <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+              </label>
+              <div class="button-row">
+                <button id="loginButton" type="submit">Log in</button>
+                <button id="signupButton" type="button" class="secondary">Sign up</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="consentPanel" class="workspace-card hidden workspace-utility-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Consent</p>
+                <h2>Consent required</h2>
+                <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
+              </div>
+            </div>
+            <form id="consentForm" class="stack-md">
+              <label>
+                History scope
+                <select id="consentHistoryMode"></select>
+              </label>
+              <label>
+                Retention window
+                <select id="consentRetention"></select>
+              </label>
+              <div class="checklist stack-sm">
+                <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
+                <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
+                <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
+              </div>
+              <div class="callout info">Your data will not be shared with third parties. You can change or revoke these settings at any time.</div>
+              <button type="submit">Save consent preferences</button>
+            </form>
+          </section>
+
+          <section id="currentSiteTab" class="tab-panel active workspace-section workspace-anchor-card">
             <article class="workspace-card current-site-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
@@ -137,7 +213,7 @@
             </article>
           </section>
 
-          <section id="topSitesTab" class="tab-panel active workspace-anchor-card">
+          <section id="topSitesTab" class="tab-panel workspace-section workspace-anchor-card">
             <article class="workspace-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
@@ -163,73 +239,19 @@
               </div>
             </article>
           </section>
-        </section>
-      </section>
 
-      <aside class="workspace-rail">
-        <div class="workspace-rail-grid">
-          <section id="authPanel" class="workspace-card hidden">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Authentication</p>
-                <h2>Sign in to begin</h2>
-                <p class="muted">Connect.Me remains inactive until you authenticate and explicitly consent.</p>
-              </div>
-            </div>
-            <form id="authForm" class="stack-md">
-              <label>
-                Email address
-                <input id="authEmail" type="email" autocomplete="username" required />
-              </label>
-              <label>
-                Password
-                <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
-              </label>
-              <div class="button-row">
-                <button id="loginButton" type="submit">Log in</button>
-                <button id="signupButton" type="button" class="secondary">Sign up</button>
-              </div>
-            </form>
-          </section>
-
-          <section id="consentPanel" class="workspace-card hidden">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Consent</p>
-                <h2>Consent required</h2>
-                <p class="muted">No history or presence data is collected before you explicitly choose your settings.</p>
-              </div>
-            </div>
-            <form id="consentForm" class="stack-md">
-              <label>
-                History scope
-                <select id="consentHistoryMode"></select>
-              </label>
-              <label>
-                Retention window
-                <select id="consentRetention"></select>
-              </label>
-              <div class="checklist stack-sm">
-                <label class="checkbox-row"><input id="consentTrackingEnabled" type="checkbox" /> Enable optional history tracking</label>
-                <label class="checkbox-row"><input id="consentPresenceEnabled" type="checkbox" checked /> Enable presence sharing</label>
-                <label class="checkbox-row"><input id="consentInvisibleMode" type="checkbox" /> Start in Invisible Mode</label>
-              </div>
-              <div class="callout info">Your data will not be shared with any third parties. You can change or revoke these settings at any time.</div>
-              <button type="submit">Save consent preferences</button>
-            </form>
-          </section>
-
-          <section id="settingsTab" class="tab-panel active workspace-anchor-card">
+          <section id="settingsTab" class="tab-panel workspace-section workspace-anchor-card">
             <article class="workspace-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
                   <p class="eyebrow">Controls</p>
-                  <h2>Settings, consent, and visibility controls</h2>
-                  <p class="muted">Manage tracking scope, presence sharing, consent, and built-in configuration from the desktop workspace.</p>
+                  <h2>Settings</h2>
+                  <p class="muted">Manage tracking scope, presence sharing, retention, and visibility preferences for your workspace.</p>
                 </div>
+                <span class="badge">Focused controls</span>
               </div>
-              <div class="stack-md">
-                <form id="privacySettingsForm" class="stack-md surface-card">
+              <div class="settings-grid">
+                <form id="privacySettingsForm" class="stack-md surface-card desktop-panel-fill">
                   <h3>Tracking and sharing</h3>
                   <label class="checkbox-row"><input id="trackingConsent" type="checkbox" /> I explicitly consent to optional tracking</label>
                   <label class="checkbox-row"><input id="trackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
@@ -247,44 +269,160 @@
                   <button type="submit">Save privacy settings</button>
                 </form>
 
-                <form id="configForm" class="stack-md surface-card">
-                  <h3>Built-in Supabase configuration</h3>
-                  <label>
-                    Supabase URL
-                    <input id="supabaseUrl" type="url" readonly aria-readonly="true" />
-                  </label>
-                  <label>
-                    Supabase anon key
-                    <textarea id="supabaseAnonKey" rows="4" readonly aria-readonly="true"></textarea>
-                  </label>
-                  <button type="submit" class="secondary">Reload built-in configuration</button>
-                </form>
-
-                <section class="surface-card stack-md">
-                  <h3>Data controls</h3>
-                  <div class="button-column">
-                    <button id="deleteHistoryButton" type="button" class="danger">Delete stored history</button>
-                    <button id="deleteAccountButton" type="button" class="danger ghost">Delete account data</button>
-                  </div>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Workspace guidance</h3>
+                  <div class="callout subtle">Settings stay hidden from the default dashboard until you select this section from the left rail.</div>
+                  <div class="callout subtle">Need backend or lifecycle controls? Use the dedicated <strong>Supabase Configuration</strong> and <strong>Data Controls</strong> sections in the navigation.</div>
+                  <div class="callout info">Presence requires three things: authentication, saved consent, and a complete profile with an uploaded avatar.</div>
                 </section>
               </div>
             </article>
           </section>
 
-          <section id="privacyTab" class="tab-panel active workspace-anchor-card">
+          <section id="privacyTab" class="tab-panel workspace-section workspace-anchor-card">
             <article class="workspace-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
                 <div>
                   <p class="eyebrow">Policy</p>
-                  <h2>Privacy policy</h2>
+                  <h2>Privacy Policy</h2>
                   <p class="muted">Review how Connect.Me handles retention, consent, visibility scope, and user controls.</p>
                 </div>
               </div>
               <div id="privacyPolicyContent" class="privacy-copy"></div>
             </article>
           </section>
+
+          <section id="editProfileTab" class="tab-panel workspace-section workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Profile</p>
+                  <h2>Edit Profile</h2>
+                  <p class="muted">Open the profile editor drawer to update your public fields, visibility settings, and avatar.</p>
+                </div>
+                <button id="editProfileSectionButton" type="button" class="secondary small">Open editor</button>
+              </div>
+              <div class="desktop-profile-preview-grid">
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Profile readiness</h3>
+                  <div id="profileWorkspaceSummary" class="empty-state">Sign in to review your profile readiness.</div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Profile visibility</h3>
+                  <div id="profileVisibilitySummary" class="empty-state">Profile visibility controls will appear here after sign-in.</div>
+                </section>
+              </div>
+            </article>
+          </section>
+
+          <section id="supabaseConfigTab" class="tab-panel workspace-section workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Backend</p>
+                  <h2>Supabase Configuration</h2>
+                  <p class="muted">Review safe connection details, project readiness, storage usage, and diagnostics without exposing secrets.</p>
+                </div>
+                <div class="button-row">
+                  <button id="refreshSupabaseDiagnostics" type="button" class="secondary small">Refresh diagnostics</button>
+                  <button id="testSupabaseConnection" type="button" class="secondary small">Test connection</button>
+                  <button id="recheckSupabaseConfig" type="button" class="secondary small">Recheck config</button>
+                </div>
+              </div>
+              <div class="workspace-card-grid two-col-grid">
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Supabase project status</h3>
+                  <div id="supabaseProjectStatus" class="info-grid"></div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Connection diagnostics</h3>
+                  <div id="supabaseDiagnosticsStatus" class="info-grid"></div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Database tables overview</h3>
+                  <div id="supabaseTablesOverview" class="info-grid"></div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Storage and buckets</h3>
+                  <div id="supabaseStorageOverview" class="info-grid"></div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Auth configuration summary</h3>
+                  <div id="supabaseAuthSummary" class="info-grid"></div>
+                </section>
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Environment and config status</h3>
+                  <div id="supabaseEnvStatus" class="info-grid"></div>
+                </section>
+              </div>
+            </article>
+          </section>
+
+          <section id="dataControlsTab" class="tab-panel workspace-section workspace-anchor-card">
+            <article class="workspace-card stack-md desktop-panel-fill">
+              <div class="section-heading dashboard-section-heading">
+                <div>
+                  <p class="eyebrow">Controls</p>
+                  <h2>Data Controls</h2>
+                  <p class="muted">Manage presence, history, consent, visibility, and data-lifecycle actions from one dedicated workspace section.</p>
+                </div>
+                <button id="editProfileFromDataControls" type="button" class="secondary small">Edit profile</button>
+              </div>
+
+              <div class="workspace-card-grid two-col-grid">
+                <form id="dataControlsForm" class="surface-card stack-md desktop-panel-fill">
+                  <h3>Presence and browsing controls</h3>
+                  <label class="checkbox-row"><input id="dataPresenceSharingEnabled" type="checkbox" /> Enable presence sharing</label>
+                  <label class="checkbox-row"><input id="dataInvisibleModeEnabled" type="checkbox" /> Invisible Mode</label>
+                  <label class="checkbox-row"><input id="dataTrackingEnabled" type="checkbox" /> Enable browsing history tracking</label>
+                  <label>
+                    History scope
+                    <select id="dataHistoryMode"></select>
+                  </label>
+                  <label>
+                    Retention period
+                    <select id="dataRetentionSelect"></select>
+                  </label>
+                  <div id="dataControlsValidationMessage" class="callout subtle hidden"></div>
+                  <button type="submit">Save data control preferences</button>
+                </form>
+
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Presence data summary</h3>
+                  <div id="dataPresenceSummary" class="info-grid"></div>
+                </section>
+
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Consent controls</h3>
+                  <div id="dataConsentSummary" class="info-grid"></div>
+                </section>
+
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Profile data controls</h3>
+                  <div id="dataProfileSummary" class="info-grid"></div>
+                </section>
+
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Data management actions</h3>
+                  <div class="button-column">
+                    <button id="clearPresenceButton" type="button" class="secondary">Clear presence data</button>
+                    <button id="deleteHistoryButton" type="button" class="danger">Clear browsing history</button>
+                    <button id="resetConsentButton" type="button" class="danger ghost">Reset consent preferences</button>
+                    <button id="exportDataButton" type="button" class="secondary">Export my data</button>
+                    <button id="deleteAccountButton" type="button" class="danger ghost">Delete my data</button>
+                  </div>
+                  <div class="callout subtle small-text">Destructive actions always require confirmation before anything is removed.</div>
+                </section>
+
+                <section class="surface-card stack-md desktop-panel-fill">
+                  <h3>Retention summary</h3>
+                  <div id="dataRetentionSummary" class="info-grid"></div>
+                </section>
+              </div>
+            </article>
+          </section>
         </div>
-      </aside>
+      </section>
     </main>
 
     <div id="profileDrawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
