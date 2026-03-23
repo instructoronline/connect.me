@@ -11,6 +11,7 @@ import {
   fetchLearningModuleConnectedUsers,
   fetchLearningModuleConnectionsForCurrentUser,
   fetchLearningModules,
+  fetchPendingLearningModuleConnectionsForCurrentUser,
   fetchTopSites,
   fetchUsersOnTopSite,
   getCachedUser,
@@ -26,6 +27,7 @@ import {
   parseRetentionSelection,
   readConfig,
   saveUserMetadataProfileSnapshot,
+  syncPendingLearningModuleConnectionsForCurrentUser,
   signIn,
   signOut,
   signUp,
@@ -96,9 +98,11 @@ const state = {
     errorMessage: ''
   },
   expandedLearningModules: new Set(),
+  expandedLearningTopics: new Set(),
   expandedLearningModuleUsers: new Set(),
   moduleConnectionIds: new Set(),
   pendingModuleConnectionIds: new Set(),
+  pendingLocalModuleConnectionIds: new Set(),
   learningModuleUsersBySlug: new Map(),
   learningModuleUsersLoading: new Set(),
   learningModuleUsersErrors: new Map(),
@@ -166,6 +170,7 @@ const DESKTOP_NAV_WIDTH = {
   expanded: 'clamp(220px, 22vw, 272px)'
 };
 
+const learningModuleFlatCardCache = new Map();
 
 function $(id) {
   return document.getElementById(id);
@@ -348,6 +353,125 @@ function escapeHtml(value = '') {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function formatCardTypeLabel(cardType = 'concept') {
+  return String(cardType || 'concept')
+    .split('-')
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
+    .join(' ');
+}
+
+function renderInlineMath(expr = '') {
+  let html = escapeHtml(String(expr || '').trim());
+  const replacements = [
+    [/\\mathbb\{R\}/g, 'ℝ'],
+    [/\\alpha/g, 'α'],
+    [/\\beta/g, 'β'],
+    [/\\gamma/g, 'γ'],
+    [/\\mu/g, 'μ'],
+    [/\\sigma/g, 'σ'],
+    [/\\eta/g, 'η'],
+    [/\\theta/g, 'θ'],
+    [/\\epsilon/g, 'ε'],
+    [/\\odot/g, '⊙'],
+    [/\\sqrt/g, '√'],
+    [/\\top/g, '⊤'],
+    [/\\cdot/g, '·'],
+    [/\\times/g, '×'],
+    [/\\prod/g, '∏'],
+    [/\\sum/g, '∑'],
+    [/\\mid/g, '|'],
+    [/\\left/g, ''],
+    [/\\right/g, ''],
+    [/\\operatorname\{Attn\}/g, 'Attn'],
+    [/\\operatorname\{softmax\}/g, 'softmax'],
+    [/\\operatorname\{MHA\}/g, 'MHA'],
+    [/\\operatorname\{FFN\}/g, 'FFN'],
+    [/\\operatorname\{LN\}/g, 'LN'],
+    [/\\nabla/g, '∇'],
+    [/\\in/g, '∈'],
+    [/\\to/g, '→'],
+    [/\\leq/g, '≤'],
+    [/\\geq/g, '≥'],
+    [/\\neq/g, '≠']
+  ];
+
+  replacements.forEach(([pattern, replacement]) => {
+    html = html.replace(pattern, replacement);
+  });
+
+  html = html.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '<span class="math-frac"><span class="math-frac-top">$1</span><span class="math-frac-bottom">$2</span></span>');
+  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)_\{([^{}]+)\}/g, '$1<sub>$2</sub>');
+  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)_([A-Za-z0-9]+)/g, '$1<sub>$2</sub>');
+  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)\^\{([^{}]+)\}/g, '$1<sup>$2</sup>');
+  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)\^([A-Za-z0-9]+)/g, '$1<sup>$2</sup>');
+  return html.replace(/\\/g, '');
+}
+
+function renderRichText(text = '') {
+  const source = String(text || '').trim();
+  if (!source) {
+    return '<p></p>';
+  }
+
+  const paragraphs = source.split(/\n\n+/).filter(Boolean);
+  return paragraphs.map((paragraph) => {
+    const trimmed = paragraph.trim();
+    if (trimmed.split('\n').every((line) => line.trim().startsWith('- '))) {
+      const items = trimmed.split('\n').map((line) => `<li>${renderRichTextInline(line.trim().slice(2))}</li>`).join('');
+      return `<ul class="rich-list">${items}</ul>`;
+    }
+
+    const parts = trimmed.split(/(\$\$[\s\S]+?\$\$)/g).filter(Boolean);
+    return parts.map((part) => {
+      if (/^\$\$[\s\S]+\$\$$/.test(part)) {
+        return `<div class="math-block">${renderInlineMath(part.slice(2, -2))}</div>`;
+      }
+
+      return `<p>${part.split('\n').map((line) => renderRichTextInline(line)).join('<br />')}</p>`;
+    }).join('');
+  }).join('');
+}
+
+function renderRichTextInline(text = '') {
+  let html = escapeHtml(String(text || ''));
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\$([^$]+)\$/g, (_match, expr) => `<span class="math-inline">${renderInlineMath(expr)}</span>`);
+  return html;
+}
+
+function getFlattenedModuleCards(module) {
+  if (!module?.id) {
+    return [];
+  }
+
+  const signature = `${module.id}:${(module.topics || []).map((topic) => `${topic.id}:${(topic.cards || []).length}`).join('|')}`;
+  const cached = learningModuleFlatCardCache.get(module.id);
+  if (cached?.signature === signature) {
+    return cached.flatCards;
+  }
+
+  const flatCards = (module.topics || []).flatMap((topic, topicIndex) => getLearningModuleTopicCards(topic).map((card, cardIndex) => ({
+    topic,
+    card,
+    topicIndex,
+    cardIndex
+  })));
+
+  learningModuleFlatCardCache.set(module.id, { signature, flatCards });
+  return flatCards;
+}
+
+function getModuleConnectionDisplay(moduleId) {
+  const queued = state.pendingLocalModuleConnectionIds.has(moduleId);
+  const connected = state.moduleConnectionIds.has(moduleId) && !queued;
+  return {
+    connected,
+    queued,
+    isSaved: connected || queued
+  };
 }
 
 function renderChevronIcon() {
@@ -1051,7 +1175,7 @@ function renderLearningModulesStatus() {
       ? 'Connecting a module requires sign-in and only exposes safe public-facing user identity details.'
       : status.setupRequired
         ? 'Apply the Learning Modules migration to enable Supabase syncing, topic seeding, and saved connections.'
-        : 'You can still browse all starter modules now, but saved connections stay disabled until Supabase is reachable again.';
+        : 'You can still browse all starter modules now, and Connect Me will queue local saves until Supabase is reachable again.';
 
     els.learningModulesStatusCallout.className = `callout ${tone}`;
     els.learningModulesStatusCallout.innerHTML = `
@@ -1064,7 +1188,8 @@ function renderLearningModulesStatus() {
 
 function isLearningModuleSetupError(message = '') {
   const normalized = String(message || '').toLowerCase();
-  return normalized.includes('learning_module_connections') && (normalized.includes('schema cache') || normalized.includes('does not exist'));
+  return (normalized.includes('learning_module_connections') && (normalized.includes('schema cache') || normalized.includes('does not exist')))
+    || (normalized.includes('get_learning_module_connected_users') && normalized.includes('does not exist'));
 }
 
 function setLearningModulesFallbackStatus({ setupRequired = false, message = '', detail = '' } = {}) {
@@ -1093,7 +1218,7 @@ function renderLearningModuleUsers(module) {
 
   let content = '<div class="empty-state">Expand this area to view connected users.</div>';
   if (!status.persistenceAvailable) {
-    content = '<div class="empty-state">Connected-user lists will appear after Supabase syncing is available.</div>';
+    content = '<div class="empty-state">Connected-user lists will appear after Supabase sync is available again. Local queued saves still update your own state immediately.</div>';
   } else if (isUsersOpen && isUsersLoading) {
     content = '<div class="empty-state">Loading connected users…</div>';
   } else if (isUsersOpen && usersError) {
@@ -1144,23 +1269,13 @@ function getLearningModuleTopicCards(topic) {
   return Array.isArray(topic?.cards) ? topic.cards : [];
 }
 
-function flattenLearningModuleCards(module) {
-  const topics = Array.isArray(module?.topics) ? module.topics : [];
-  return topics.flatMap((topic, topicIndex) => getLearningModuleTopicCards(topic).map((card, cardIndex) => ({
-    topic,
-    card,
-    topicIndex,
-    cardIndex
-  })));
-}
-
 function getLearningModulePlayerSnapshot(moduleId = state.activeModuleId) {
   const module = getLearningModuleById(moduleId);
   if (!module) {
     return null;
   }
 
-  const flatCards = flattenLearningModuleCards(module);
+  const flatCards = getFlattenedModuleCards(module);
   if (!flatCards.length) {
     return { module, flatCards, currentEntry: null, currentFlatIndex: -1 };
   }
@@ -1227,32 +1342,50 @@ function moveLearningModuleCard(offset) {
   renderLearningModulesSection();
 }
 
-function renderLearningModuleTopicPreview(topic) {
+function renderLearningModuleTopicPreview(module, topic) {
   const cards = getLearningModuleTopicCards(topic);
+  const topicKey = `${module.id}:${topic.id}`;
+  const isOpen = state.expandedLearningTopics.has(topicKey);
+  const previewCards = isOpen ? cards : cards.slice(0, 3);
+
   return `
-    <div class="learning-module-topic-preview">
-      <div class="learning-module-topic-preview-header">
+    <div class="learning-module-topic-preview ${isOpen ? 'is-open' : ''}">
+      <button
+        type="button"
+        class="learning-module-topic-toggle"
+        data-action="toggle-topic"
+        data-module-id="${escapeHtml(module.id)}"
+        data-topic-id="${escapeHtml(topic.id)}"
+        aria-expanded="${String(isOpen)}"
+      >
         <div>
           <h4>${escapeHtml(topic.topic_title || 'Topic')}</h4>
           ${topic.summary ? `<p class="muted small-text">${escapeHtml(topic.summary)}</p>` : ''}
         </div>
-        <span class="pill">${escapeHtml(`${cards.length} card${cards.length === 1 ? '' : 's'}`)}</span>
-      </div>
-      ${cards.length
-        ? `
-          <div class="learning-module-card-chip-row">
-            ${cards.map((card, index) => `
-              <div class="learning-module-card-chip">
-                <span class="pill">${index + 1}</span>
-                <div class="stack-xs">
-                  <strong>${escapeHtml(card.title || 'Learning card')}</strong>
-                  ${card.subtopic_title ? `<span class="muted small-text">${escapeHtml(card.subtopic_title)}</span>` : ''}
+        <div class="learning-module-topic-toggle-meta">
+          <span class="pill">${escapeHtml(`${cards.length} card${cards.length === 1 ? '' : 's'}`)}</span>
+          <span class="learning-module-chevron" aria-hidden="true">${renderChevronIcon()}</span>
+        </div>
+      </button>
+      <div class="learning-module-topic-content ${isOpen ? 'is-open' : ''}">
+        ${cards.length
+          ? `
+            <div class="learning-module-card-chip-row">
+              ${previewCards.map((card, index) => `
+                <div class="learning-module-card-chip">
+                  <span class="pill">${index + 1}</span>
+                  <div class="stack-xs">
+                    <strong>${escapeHtml(card.title || 'Learning card')}</strong>
+                    ${card.subtopic_title ? `<span class="muted small-text">${escapeHtml(card.subtopic_title)}</span>` : ''}
+                    <span class="muted small-text">${escapeHtml(formatCardTypeLabel(card.card_type))}</span>
+                  </div>
                 </div>
-              </div>
-            `).join('')}
-          </div>
-        `
-        : '<div class="empty-state">Cards will appear here after this topic is populated.</div>'}
+              `).join('')}
+            </div>
+            ${!isOpen && cards.length > 3 ? `<p class="muted small-text">Open this topic to inspect all ${cards.length} cards without rendering every card upfront.</p>` : ''}
+          `
+          : '<div class="empty-state">Cards will appear here after this topic is populated.</div>'}
+      </div>
     </div>
   `;
 }
@@ -1306,7 +1439,7 @@ function renderLearningModulePlayer() {
       <div class="learning-module-player-card">
         <div class="learning-module-player-card-header">
           <div class="stack-xs">
-            <span class="pill">${escapeHtml((card.card_type || 'concept').replace(/-/g, ' '))}</span>
+            <span class="pill">${escapeHtml(formatCardTypeLabel(card.card_type))}</span>
             <h3>${escapeHtml(card.title || 'Learning card')}</h3>
             ${card.subtopic_title ? `<p class="muted">${escapeHtml(card.subtopic_title)}</p>` : ''}
           </div>
@@ -1315,7 +1448,7 @@ function renderLearningModulePlayer() {
           ${sections.map((section) => `
             <section class="learning-module-content-section">
               <h4>${escapeHtml(section.label || 'Section')}</h4>
-              <p>${escapeHtml(section.body || '')}</p>
+              ${renderRichText(section.body || '')}
             </section>
           `).join('')}
         </div>
@@ -1374,18 +1507,24 @@ function renderLearningModulesSection() {
 
   els.learningModulesList.innerHTML = state.learningModules.map((module) => {
     const isExpanded = state.expandedLearningModules.has(module.id);
-    const isConnected = status.persistenceAvailable && state.moduleConnectionIds.has(module.id);
-    const isConnecting = status.persistenceAvailable && state.pendingModuleConnectionIds.has(module.id);
+    const connectionDisplay = getModuleConnectionDisplay(module.id);
+    const isConnected = connectionDisplay.connected;
+    const isQueued = connectionDisplay.queued;
+    const isConnecting = state.pendingModuleConnectionIds.has(module.id);
     const topics = Array.isArray(module.topics) ? module.topics : [];
     const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
       ? 'Hide all users connected'
       : 'Show all users connected';
-    const canConnect = status.persistenceAvailable;
-    const helperText = !status.persistenceAvailable
-      ? 'Connect Me becomes available automatically after Supabase syncing is ready.'
-      : !state.user
-        ? 'Sign in to connect yourself to a module. Browsing modules remains available while signed out.'
-        : 'Connect yourself to save this module to your Supabase-backed workspace.';
+    const canConnect = !isConnecting && !connectionDisplay.isSaved;
+    const helperText = !state.user
+      ? 'Sign in to connect yourself to a module. Browsing modules remains available while signed out.'
+      : isQueued
+        ? (status.setupRequired
+          ? 'Saved locally. Run the bundled Learning Modules SQL to sync this connection into Supabase.'
+          : 'Saved locally and will sync automatically once Supabase becomes available again.')
+        : status.persistenceAvailable
+          ? 'Connect yourself to save this module to your Supabase-backed workspace.'
+          : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
 
     return `
       <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}">
@@ -1401,6 +1540,7 @@ function renderLearningModulesSection() {
               <div class="learning-module-heading-row">
                 <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
                 ${isConnected ? '<span class="pill success">Connected</span>' : ''}
+                ${isQueued ? '<span class="pill warning">Queued sync</span>' : ''}
                 ${!status.persistenceAvailable ? '<span class="pill warning">Fallback</span>' : ''}
               </div>
               <div>
@@ -1418,11 +1558,11 @@ function renderLearningModulesSection() {
               data-action="connect-module"
               data-module-id="${escapeHtml(module.id)}"
               data-module-slug="${escapeHtml(module.slug)}"
-              ${!canConnect || isConnecting || isConnected ? 'disabled' : ''}
-              title="${escapeHtml(status.persistenceAvailable ? (state.user ? 'Save this learning module to your profile.' : 'Sign in to save this learning module.') : 'Supabase syncing is required before connections can be saved.')}"
+              ${!canConnect ? 'disabled' : ''}
+              title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : status.persistenceAvailable ? 'Save this learning module to your profile.' : 'Save locally now and sync to Supabase later.')}"
             >
               <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
-              <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : 'Connect Me'}</span>
+              <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : isQueued ? 'Queued locally' : 'Connect Me'}</span>
             </button>
             <button
               type="button"
@@ -1459,7 +1599,7 @@ function renderLearningModulesSection() {
                 ${topics.length
                   ? `
                     <div class="learning-module-topic-list">
-                      ${topics.map((topic) => renderLearningModuleTopicPreview(topic)).join('')}
+                      ${topics.map((topic) => renderLearningModuleTopicPreview(module, topic)).join('')}
                     </div>
                   `
                   : '<div class="empty-state">No topics have been added yet.</div>'}
@@ -1498,24 +1638,52 @@ async function loadLearningModules({ force = false } = {}) {
       state.learningModuleCompleted = false;
     }
 
-    if (state.user && state.learningModulesStatus.persistenceAvailable) {
+    if (state.user) {
+      let remoteConnections = [];
+      let pendingConnections = [];
+
       try {
-        const currentUserConnections = await fetchLearningModuleConnectionsForCurrentUser();
-        state.moduleConnectionIds = new Set((currentUserConnections || []).map((connection) => connection.module_id));
-      } catch (error) {
-        state.moduleConnectionIds = new Set();
-        state.pendingModuleConnectionIds = new Set();
-        setLearningModulesFallbackStatus({
-          setupRequired: isLearningModuleSetupError(error?.message),
-          message: 'Starter modules are still available, but saved connections are temporarily disabled.',
-          detail: isLearningModuleSetupError(error?.message)
-            ? 'The learning-module connection table or related Supabase function is missing. Apply the migration to enable persistence.'
-            : 'Supabase could not load your saved module connections right now. Browsing starter modules still works.'
-        });
+        pendingConnections = await fetchPendingLearningModuleConnectionsForCurrentUser();
+
+        if (state.learningModulesStatus.persistenceAvailable) {
+          try {
+            const syncResult = await syncPendingLearningModuleConnectionsForCurrentUser(state.learningModules);
+            pendingConnections = syncResult.remaining || [];
+          } catch (syncError) {
+            if (isLearningModuleSetupError(syncError?.message)) {
+              setLearningModulesFallbackStatus({
+                setupRequired: true,
+                message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
+                detail: 'Run the bundled Learning Modules SQL to create the connection table and RPC helper, then queued connections will sync automatically.'
+              });
+            }
+          }
+
+          try {
+            remoteConnections = await fetchLearningModuleConnectionsForCurrentUser();
+          } catch (error) {
+            setLearningModulesFallbackStatus({
+              setupRequired: isLearningModuleSetupError(error?.message),
+              message: 'Learning Modules connections are being saved locally while Supabase sync is unavailable.',
+              detail: isLearningModuleSetupError(error?.message)
+                ? 'The learning-module connection table or related Supabase function is missing. Run the bundled SQL to enable server-side persistence.'
+                : 'Supabase could not load your saved module connections right now, so new connections will stay queued locally until it recovers.'
+            });
+          }
+        }
+      } catch (_error) {
+        pendingConnections = [];
       }
+
+      state.pendingLocalModuleConnectionIds = new Set((pendingConnections || []).map((connection) => connection.module_id));
+      state.moduleConnectionIds = new Set([
+        ...(remoteConnections || []).map((connection) => connection.module_id),
+        ...(pendingConnections || []).map((connection) => connection.module_id)
+      ]);
     } else {
       state.moduleConnectionIds = new Set();
       state.pendingModuleConnectionIds = new Set();
+      state.pendingLocalModuleConnectionIds = new Set();
     }
   } catch (error) {
     state.learningModulesError = 'Starter learning modules could not be loaded right now.';
@@ -1526,9 +1694,10 @@ async function loadLearningModules({ force = false } = {}) {
     });
   } finally {
     state.learningModulesLoading = false;
-    if (!state.user || !state.learningModulesStatus.persistenceAvailable) {
+    if (!state.user) {
       state.moduleConnectionIds = new Set();
       state.pendingModuleConnectionIds = new Set();
+      state.pendingLocalModuleConnectionIds = new Set();
     }
     renderLearningModulesSection();
   }
@@ -1564,11 +1733,6 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     return;
   }
 
-  if (!getLearningModulesStatus().persistenceAvailable) {
-    setStatus('Learning Modules are currently in fallback mode. Apply the Supabase migration or restore connectivity to enable saved connections.', 'error');
-    return;
-  }
-
   if (!state.user) {
     try {
       state.user = await getCurrentUser();
@@ -1588,21 +1752,33 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   }
 
   state.pendingModuleConnectionIds.add(moduleId);
+  state.moduleConnectionIds.add(moduleId);
   renderLearningModulesSection();
 
   try {
-    await connectCurrentUserToLearningModule(moduleId);
-    state.moduleConnectionIds.add(moduleId);
-    state.learningModuleUsersBySlug.delete(moduleSlug);
-    setStatus('You are now connected to this learning module.', 'success');
-
-    if (state.expandedLearningModuleUsers.has(moduleSlug)) {
-      await loadLearningModuleUsers(moduleSlug, { force: true });
+    const result = await connectCurrentUserToLearningModule(moduleId, { moduleSlug });
+    if (result?.queued) {
+      state.pendingLocalModuleConnectionIds.add(moduleId);
+      setStatus(
+        result.status === 'setup_required'
+          ? 'Connect Me saved this module locally. Run the bundled Learning Modules SQL and it will sync automatically.'
+          : 'Connect Me saved this module locally and will sync it to Supabase automatically when the backend is reachable again.',
+        'success'
+      );
     } else {
-      renderLearningModulesSection();
+      state.pendingLocalModuleConnectionIds.delete(moduleId);
+      state.learningModuleUsersBySlug.delete(moduleSlug);
+      setStatus('You are now connected to this learning module.', 'success');
+
+      if (state.expandedLearningModuleUsers.has(moduleSlug)) {
+        await loadLearningModuleUsers(moduleSlug, { force: true });
+      }
     }
   } catch (error) {
-    setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
+    state.moduleConnectionIds.delete(moduleId);
+    if (!state.pendingLocalModuleConnectionIds.has(moduleId)) {
+      setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
+    }
   } finally {
     state.pendingModuleConnectionIds.delete(moduleId);
     renderLearningModulesSection();
@@ -2470,6 +2646,18 @@ async function bindEvents() {
         state.expandedLearningModules.delete(moduleId);
       } else {
         state.expandedLearningModules.add(moduleId);
+      }
+      renderLearningModulesSection();
+      return;
+    }
+
+    if (actionButton.dataset.action === 'toggle-topic') {
+      const topicId = actionButton.dataset.topicId || '';
+      const topicKey = `${moduleId}:${topicId}`;
+      if (state.expandedLearningTopics.has(topicKey)) {
+        state.expandedLearningTopics.delete(topicKey);
+      } else {
+        state.expandedLearningTopics.add(topicKey);
       }
       renderLearningModulesSection();
       return;
