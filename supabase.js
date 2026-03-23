@@ -1182,13 +1182,59 @@ export async function fetchActiveUsersForDomain(domain) {
 }
 
 export async function fetchTopSites() {
-  const rows = await restRequest('top_active_sites', {
-    query: '?select=domain,active_user_count,last_seen&order=active_user_count.desc,last_seen.desc'
+  const rows = await restRequest('active_presence', {
+    query: '?select=domain,path,full_url,page_title,last_seen&order=last_seen.desc'
   });
-  return (rows || []).map((row) => ({
-    ...row,
-    trackedDisplayUrl: row.full_url || row.path ? `${row.domain}${row.path || ''}` : row.domain
-  }));
+  const sitesByDomain = new Map();
+
+  (rows || []).forEach((row) => {
+    const domain = String(row?.domain || '').trim();
+    if (!domain) {
+      return;
+    }
+
+    const existing = sitesByDomain.get(domain);
+    const fullUrl = String(row?.full_url || '').trim();
+    const path = String(row?.path || '').trim();
+    const pageTitle = String(row?.page_title || '').trim();
+    const lastSeen = row?.last_seen || null;
+
+    if (!existing) {
+      sitesByDomain.set(domain, {
+        domain,
+        active_user_count: 1,
+        last_seen: lastSeen,
+        page_title: pageTitle,
+        full_url: fullUrl,
+        path,
+        trackedDisplayUrl: fullUrl || `${domain}${path || ''}` || domain
+      });
+      return;
+    }
+
+    existing.active_user_count += 1;
+    if (lastSeen && (!existing.last_seen || new Date(lastSeen) > new Date(existing.last_seen))) {
+      existing.last_seen = lastSeen;
+    }
+    if (!existing.page_title && pageTitle) {
+      existing.page_title = pageTitle;
+    }
+    if (!existing.full_url && fullUrl) {
+      existing.full_url = fullUrl;
+    }
+    if (!existing.path && path) {
+      existing.path = path;
+    }
+    existing.trackedDisplayUrl = existing.full_url || `${domain}${existing.path || ''}` || domain;
+  });
+
+  return [...sitesByDomain.values()].sort((left, right) => {
+    const countDiff = (Number(right.active_user_count) || 0) - (Number(left.active_user_count) || 0);
+    if (countDiff !== 0) {
+      return countDiff;
+    }
+    return new Date(right.last_seen || 0).getTime() - new Date(left.last_seen || 0).getTime();
+  });
 }
 
 export async function fetchUsersOnTopSite(domain) {
