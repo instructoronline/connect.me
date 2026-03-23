@@ -522,8 +522,9 @@ textarea:disabled {
 .avatar-large { width: 104px; height: 104px; min-width: 104px; font-size: 1.5rem; }
 
 .profile-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 152px) minmax(0, 1fr);
   align-items: flex-start;
-  flex-wrap: nowrap;
 }
 
 .avatar-column {
@@ -548,8 +549,8 @@ textarea:disabled {
 }
 
 .profile-field-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 10px;
@@ -557,12 +558,15 @@ textarea:disabled {
 
 .field-label {
   display: inline-flex;
+  width: 100%;
   font-size: 0.92rem;
   font-weight: 700;
 }
 
 .visibility-select {
-  width: min(100%, 220px);
+  display: grid;
+  justify-items: stretch;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
   gap: 6px;
@@ -570,7 +574,12 @@ textarea:disabled {
   color: var(--muted);
 }
 
+.visibility-select span {
+  min-width: 0;
+}
+
 .visibility-select select {
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   padding: 8px 10px;
@@ -1123,7 +1132,6 @@ code {
 
 .profile-field-header {
   width: 100%;
-  flex-wrap: wrap;
   align-items: flex-start;
 }
 
@@ -1132,16 +1140,11 @@ code {
 }
 
 .field-label {
-  flex: 1 1 160px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .visibility-select {
-  flex: 1 1 180px;
-  width: min(100%, 220px);
-  max-width: 100%;
-  margin-left: auto;
   min-width: 0;
 }
 
@@ -1262,7 +1265,7 @@ code {
   .url-row,
   .url-row.compact,
   .site-meta-row,
-  .profile-editor-card .profile-edit-layout {
+  .profile-edit-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1280,9 +1283,13 @@ code {
   }
 
   .visibility-select {
-    flex: 1 1 100%;
     width: 100%;
-    margin-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .profile-field-header {
+    grid-template-columns: 1fr;
   }
 }
 
