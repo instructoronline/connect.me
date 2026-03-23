@@ -271,6 +271,7 @@ input,
 select,
 textarea {
   width: 100%;
+  max-width: 100%;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--surface-muted);
@@ -289,6 +290,7 @@ textarea:focus {
 }
 
 button {
+  max-width: 100%;
   border: 0;
   border-radius: 14px;
   padding: 11px 15px;
@@ -560,14 +562,17 @@ textarea:disabled {
 }
 
 .visibility-select {
-  min-width: 132px;
+  width: min(100%, 220px);
+  max-width: 100%;
+  min-width: 0;
   gap: 6px;
   font-size: 0.8rem;
   color: var(--muted);
 }
 
 .visibility-select select {
-  min-width: 132px;
+  min-width: 0;
+  max-width: 100%;
   padding: 8px 10px;
 }
 
@@ -1029,6 +1034,7 @@ code {
   flex-direction: column;
   gap: 16px;
   height: 100%;
+  min-width: 0;
   margin: 0;
   padding: 24px;
   border-left: 1px solid rgba(113, 145, 215, 0.35);
@@ -1054,6 +1060,7 @@ code {
 
 .profile-drawer-form {
   flex: 1;
+  min-width: 0;
 }
 
 .profile-drawer-form > button[type='submit'] {
@@ -1074,6 +1081,8 @@ code {
   display: grid;
   gap: 12px;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .profile-field-card-wide {
@@ -1081,7 +1090,9 @@ code {
 }
 
 .profile-field-header {
+  width: 100%;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .profile-field-header > * {
@@ -1089,17 +1100,22 @@ code {
 }
 
 .field-label {
+  flex: 1 1 160px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .visibility-select {
-  flex: 0 0 148px;
+  flex: 1 1 180px;
+  width: min(100%, 220px);
+  max-width: 100%;
   margin-left: auto;
+  min-width: 0;
 }
 
 .visibility-select select {
   width: 100%;
+  max-width: 100%;
 }
 
 .profile-editor-card textarea {
@@ -1232,7 +1248,8 @@ code {
   }
 
   .visibility-select {
-    flex-basis: auto;
+    flex: 1 1 100%;
+    width: 100%;
     margin-left: 0;
   }
 }
