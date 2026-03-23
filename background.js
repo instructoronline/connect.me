@@ -19,10 +19,93 @@ const PURGE_ALARM = 'connectme-purge';
 const LAST_TRACKED_TAB_KEY = 'connectme-last-tracked';
 const ACTIVE_CONTEXT_KEY = 'connectme-active-context';
 const PRESENCE_EXPIRY_MS = 3 * 60 * 1000;
+const DESKTOP_WINDOW_URL = chrome.runtime.getURL('desktop.html');
+const DESKTOP_WINDOW_BOUNDS = {
+  width: 1280,
+  height: 920
+};
 
 async function getActiveTab() {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tabs[0] || null;
+}
+
+async function findDesktopWorkspaceTab() {
+  const tabs = await chrome.tabs.query({ url: DESKTOP_WINDOW_URL });
+  if (!tabs.length) {
+    return null;
+  }
+
+  let fallbackTab = null;
+
+  for (const tab of tabs) {
+    if (!Number.isInteger(tab.windowId)) {
+      continue;
+    }
+
+    try {
+      const windowInfo = await chrome.windows.get(tab.windowId);
+      if (windowInfo?.type === 'popup') {
+        return { tab, windowInfo };
+      }
+
+      if (!fallbackTab) {
+        fallbackTab = { tab, windowInfo };
+      }
+    } catch (_error) {
+      // Ignore stale window references and continue scanning.
+    }
+  }
+
+  return fallbackTab;
+}
+
+async function focusDesktopWorkspace(windowId, tabId) {
+  const updateWindow = chrome.windows.update(windowId, { focused: true, state: 'normal' });
+  const updateTab = Number.isInteger(tabId) ? chrome.tabs.update(tabId, { active: true }) : Promise.resolve(null);
+  await Promise.all([updateWindow, updateTab]);
+}
+
+async function openDesktopWorkspaceWindow() {
+  const existingWorkspace = await findDesktopWorkspaceTab();
+  if (existingWorkspace?.windowInfo?.id) {
+    if (existingWorkspace.windowInfo.type !== 'popup' && Number.isInteger(existingWorkspace.tab?.id)) {
+      const movedWindow = await chrome.windows.create({
+        tabId: existingWorkspace.tab.id,
+        type: 'popup',
+        focused: true,
+        width: DESKTOP_WINDOW_BOUNDS.width,
+        height: DESKTOP_WINDOW_BOUNDS.height
+      });
+
+      return {
+        reused: true,
+        windowId: movedWindow?.id || null,
+        tabId: movedWindow?.tabs?.[0]?.id || existingWorkspace.tab.id
+      };
+    }
+
+    await focusDesktopWorkspace(existingWorkspace.windowInfo.id, existingWorkspace.tab?.id);
+    return {
+      reused: true,
+      windowId: existingWorkspace.windowInfo.id,
+      tabId: existingWorkspace.tab?.id || null
+    };
+  }
+
+  const createdWindow = await chrome.windows.create({
+    url: DESKTOP_WINDOW_URL,
+    type: 'popup',
+    focused: true,
+    width: DESKTOP_WINDOW_BOUNDS.width,
+    height: DESKTOP_WINDOW_BOUNDS.height
+  });
+
+  return {
+    reused: false,
+    windowId: createdWindow?.id || null,
+    tabId: createdWindow?.tabs?.[0]?.id || null
+  };
 }
 
 function stringifyForLog(value) {
@@ -291,6 +374,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     logStructured('log', '[Connect.Me] Top-sites refresh trigger', { reason: message.reason || 'manual' });
     broadcastMessage({ type: 'TOP_SITES_REFRESH_REQUESTED', reason: message.reason || 'manual' })
       .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message?.type === 'OPEN_DESKTOP_WINDOW') {
+    openDesktopWorkspaceWindow()
+      .then((result) => sendResponse({ ok: true, ...result }))
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }

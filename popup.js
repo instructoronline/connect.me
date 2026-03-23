@@ -217,12 +217,35 @@ async function openDesktopWorkspace() {
   const desktopUrl = chrome.runtime.getURL('desktop.html');
 
   try {
-    if (chrome.tabs?.create) {
-      await chrome.tabs.create({ url: desktopUrl });
+    if (chrome.runtime?.sendMessage) {
+      const response = await chrome.runtime.sendMessage({
+        type: 'OPEN_DESKTOP_WINDOW',
+        reason: isDesktopWorkspace ? 'desktop-relaunch' : 'popup-launch'
+      });
+
+      if (response?.ok) {
+        return true;
+      }
+
+      throw new Error(response?.error || UI_TEXT.desktopLaunchError);
+    }
+
+    if (chrome.windows?.create) {
+      await chrome.windows.create({
+        url: desktopUrl,
+        type: 'popup',
+        focused: true,
+        width: 1280,
+        height: 920
+      });
       return true;
     }
 
-    const popupWindow = window.open(desktopUrl, '_blank', 'noopener');
+    const popupWindow = window.open(
+      desktopUrl,
+      '_blank',
+      'popup=yes,noopener,width=1280,height=920'
+    );
     if (popupWindow) {
       return true;
     }

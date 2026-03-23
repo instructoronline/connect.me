@@ -16,7 +16,8 @@
   "permissions": [
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "windows"
   ],
   "host_permissions": [
     "https://dhmtljnjygcqzjrhhscu.supabase.co/*"
