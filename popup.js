@@ -167,6 +167,19 @@ function formatActiveUserLabel(count) {
   return `${safeCount} active user${safeCount === 1 ? '' : 's'}`;
 }
 
+function renderActiveUserBadge(count) {
+  const safeCount = Number.isFinite(Number(count)) ? Math.max(0, Number(count)) : 0;
+  const userLabel = safeCount === 1 ? 'user' : 'users';
+  const ariaLabel = formatActiveUserLabel(safeCount);
+
+  return `
+    <span class="badge active-user-badge" aria-label="${escapeHtml(ariaLabel)}" title="${escapeHtml(ariaLabel)}">
+      <span class="active-user-badge-count">${escapeHtml(String(safeCount))}</span>
+      <span class="active-user-badge-text">active</span>
+      <span class="active-user-badge-text">${userLabel}</span>
+    </span>
+  `;
+}
 
 function formatHistoryModeLabel(mode) {
   switch (mode) {
@@ -1032,7 +1045,7 @@ function renderTopSites() {
             <div class="muted">Last active ${new Date(site.last_seen).toLocaleTimeString()}</div>
             ${currentSiteDetail}
           </div>
-          <span class="badge">${formatActiveUserLabel(site.active_user_count)}</span>
+          ${renderActiveUserBadge(site.active_user_count)}
         </button>
       `;
     })
