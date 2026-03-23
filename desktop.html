@@ -21,6 +21,7 @@
                 <span>Presence</span>
                 <input id="presenceQuickToggle" type="checkbox" />
               </label>
+              <button id="editProfileButton" type="button" class="secondary small">Edit profile</button>
               <button id="openDesktopButton" type="button" class="secondary small">Open workspace</button>
             </div>
           </div>
@@ -99,6 +100,7 @@
                       <h3>Profile summary</h3>
                       <p class="muted small-text">The public-facing snapshot others can see according to your visibility controls.</p>
                     </div>
+                    <button id="profileSummaryEditButton" type="button" class="secondary small">Edit profile</button>
                   </div>
                   <div id="selfProfileSummary" class="empty-state">Sign in to load your profile.</div>
                 </section>
@@ -203,89 +205,6 @@
             </form>
           </section>
 
-          <section id="profilePanel" class="workspace-card profile-editor-card hidden">
-            <div class="section-heading align-start">
-              <div>
-                <p class="eyebrow">Profile workspace</p>
-                <h2>Profile editing</h2>
-                <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
-              </div>
-              <button id="logoutButton" type="button" class="secondary small">Log out</button>
-            </div>
-            <form id="profileForm" class="stack-md" enctype="multipart/form-data">
-              <div class="profile-edit-layout desktop-profile-layout">
-                <div class="avatar-column">
-                  <div id="avatarPreview" class="avatar avatar-large">CM</div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="profileImage">Profile picture</label>
-                      <label class="visibility-select" for="shareAvatar">
-                        <span>Visibility</span>
-                        <select id="shareAvatar"><option value="true">Share</option><option value="false">Not share</option></select>
-                      </label>
-                    </div>
-                    <label class="file-input-label">
-                      Upload avatar
-                      <input id="profileImage" type="file" accept="image/*" />
-                    </label>
-                    <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
-                  </div>
-                </div>
-                <div class="profile-fields stack-md">
-                  <div class="desktop-profile-grid">
-                    <div class="profile-field-card">
-                      <div class="profile-field-header">
-                        <label class="field-label" for="firstName">First name</label>
-                        <label class="visibility-select" for="shareFirstName"><span>Visibility</span><select id="shareFirstName"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                      </div>
-                      <input id="firstName" type="text" maxlength="50" required />
-                    </div>
-                    <div class="profile-field-card">
-                      <div class="profile-field-header">
-                        <label class="field-label" for="lastName">Last name</label>
-                        <label class="visibility-select" for="shareLastName"><span>Visibility</span><select id="shareLastName"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                      </div>
-                      <input id="lastName" type="text" maxlength="50" required />
-                    </div>
-                    <div class="profile-field-card">
-                      <div class="profile-field-header">
-                        <label class="field-label" for="placeOfWork">Place of work</label>
-                        <label class="visibility-select" for="sharePlaceOfWork"><span>Visibility</span><select id="sharePlaceOfWork"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                      </div>
-                      <input id="placeOfWork" type="text" maxlength="120" required />
-                    </div>
-                    <div class="profile-field-card">
-                      <div class="profile-field-header">
-                        <label class="field-label" for="education">Education</label>
-                        <label class="visibility-select" for="shareEducation"><span>Visibility</span><select id="shareEducation"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                      </div>
-                      <input id="education" type="text" maxlength="120" required />
-                    </div>
-                    <div class="profile-field-card">
-                      <div class="profile-field-header">
-                        <label class="field-label" for="currentLocation">Current location</label>
-                        <label class="visibility-select" for="shareCurrentLocation"><span>Visibility</span><select id="shareCurrentLocation"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                      </div>
-                      <input id="currentLocation" type="text" maxlength="120" required />
-                    </div>
-                    <div class="profile-field-card">
-                      <label class="field-label" for="headline">Professional headline</label>
-                      <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
-                    </div>
-                  </div>
-                  <div class="profile-field-card">
-                    <div class="profile-field-header">
-                      <label class="field-label" for="bio">Short bio</label>
-                      <label class="visibility-select" for="shareBio"><span>Visibility</span><select id="shareBio"><option value="true">Share</option><option value="false">Not share</option></select></label>
-                    </div>
-                    <textarea id="bio" rows="4" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
-                  </div>
-                </div>
-              </div>
-              <button type="submit">Save profile</button>
-            </form>
-          </section>
-
           <section id="settingsTab" class="tab-panel active workspace-anchor-card">
             <article class="workspace-card stack-md desktop-panel-fill">
               <div class="section-heading dashboard-section-heading">
@@ -353,6 +272,97 @@
         </div>
       </aside>
     </main>
+
+    <div id="profileDrawerBackdrop" class="drawer-backdrop" aria-hidden="true"></div>
+    <aside id="profileDrawer" class="profile-drawer" aria-hidden="true" aria-labelledby="profileDrawerTitle" aria-modal="true" role="dialog">
+      <section id="profilePanel" class="profile-editor-card profile-drawer-panel hidden">
+        <div class="profile-drawer-header">
+          <div class="section-heading align-start">
+            <div>
+              <p class="eyebrow">Profile workspace</p>
+              <h2 id="profileDrawerTitle">Profile editing</h2>
+              <p id="profilePrompt" class="muted">Complete your full profile before using community presence features.</p>
+            </div>
+            <div class="button-row drawer-actions">
+              <button id="logoutButton" type="button" class="secondary small">Log out</button>
+              <button id="closeProfileDrawerButton" type="button" class="secondary small">Close</button>
+            </div>
+          </div>
+        </div>
+        <form id="profileForm" class="stack-md profile-drawer-form" enctype="multipart/form-data">
+          <div class="profile-edit-layout desktop-profile-layout">
+            <div class="avatar-column">
+              <div id="avatarPreview" class="avatar avatar-large">CM</div>
+              <div class="profile-field-card">
+                <div class="profile-field-header">
+                  <label class="field-label" for="profileImage">Profile picture</label>
+                  <label class="visibility-select" for="shareAvatar">
+                    <span>Visibility</span>
+                    <select id="shareAvatar"><option value="true">Share</option><option value="false">Not share</option></select>
+                  </label>
+                </div>
+                <label class="file-input-label">
+                  Upload avatar
+                  <input id="profileImage" type="file" accept="image/*" />
+                </label>
+                <p class="helper-text">Images only. Uploads are stored in the Supabase <code>avatars</code> bucket.</p>
+              </div>
+            </div>
+            <div class="profile-fields stack-md">
+              <div class="desktop-profile-grid profile-form-grid">
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="firstName">First name</label>
+                    <label class="visibility-select" for="shareFirstName"><span>Visibility</span><select id="shareFirstName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <input id="firstName" type="text" maxlength="50" required />
+                </div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="lastName">Last name</label>
+                    <label class="visibility-select" for="shareLastName"><span>Visibility</span><select id="shareLastName"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <input id="lastName" type="text" maxlength="50" required />
+                </div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="placeOfWork">Place of work</label>
+                    <label class="visibility-select" for="sharePlaceOfWork"><span>Visibility</span><select id="sharePlaceOfWork"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <input id="placeOfWork" type="text" maxlength="120" required />
+                </div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="education">Education</label>
+                    <label class="visibility-select" for="shareEducation"><span>Visibility</span><select id="shareEducation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <input id="education" type="text" maxlength="120" required />
+                </div>
+                <div class="profile-field-card">
+                  <div class="profile-field-header">
+                    <label class="field-label" for="currentLocation">Current location</label>
+                    <label class="visibility-select" for="shareCurrentLocation"><span>Visibility</span><select id="shareCurrentLocation"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                  </div>
+                  <input id="currentLocation" type="text" maxlength="120" required />
+                </div>
+                <div class="profile-field-card">
+                  <label class="field-label" for="headline">Professional headline</label>
+                  <input id="headline" type="text" maxlength="120" placeholder="Researcher · Educator · Product Builder" />
+                </div>
+              </div>
+              <div class="profile-field-card profile-field-card-wide">
+                <div class="profile-field-header">
+                  <label class="field-label" for="bio">Short bio</label>
+                  <label class="visibility-select" for="shareBio"><span>Visibility</span><select id="shareBio"><option value="true">Share</option><option value="false">Not share</option></select></label>
+                </div>
+                <textarea id="bio" rows="5" maxlength="280" placeholder="Describe your role, interests, or areas of focus."></textarea>
+              </div>
+            </div>
+          </div>
+          <button type="submit">Save profile</button>
+        </form>
+      </section>
+    </aside>
 
     <script type="module" src="desktop.js"></script>
   </body>
