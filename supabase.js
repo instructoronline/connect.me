@@ -3,7 +3,8 @@ import { getStarterLearningModules } from './learning-modules.js';
 const STORAGE_KEYS = {
   config: 'connectme-config',
   session: 'connectme-session',
-  cachedUser: 'connectme-cached-user'
+  cachedUser: 'connectme-cached-user',
+  learningModulePendingConnections: 'connectme-learning-module-pending-connections'
 };
 
 export const BUILT_IN_SUPABASE_CONFIG = Object.freeze({
@@ -84,6 +85,161 @@ function isLearningModuleCardsTableMissingMessage(message = '') {
     || (normalized.includes('learning_module_cards') && normalized.includes('schema cache'));
 }
 
+function isLearningModuleConnectionsTableMissingMessage(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes("could not find the table 'public.learning_module_connections' in the schema cache")
+    || normalized.includes('relation "public.learning_module_connections" does not exist')
+    || normalized.includes("could not find the function public.get_learning_module_connected_users")
+    || (normalized.includes('learning_module_connections') && normalized.includes('schema cache'))
+    || (normalized.includes('get_learning_module_connected_users') && normalized.includes('does not exist'));
+}
+
+function isTransientLearningModulePersistenceMessage(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes('failed to fetch')
+    || normalized.includes('networkerror')
+    || normalized.includes('network request failed')
+    || normalized.includes('load failed')
+    || normalized.includes('fetch')
+    || normalized.includes('timed out')
+    || normalized.includes('gateway')
+    || normalized.includes('service unavailable')
+    || normalized.includes('temporarily unavailable')
+    || normalized.includes('invalid input syntax for type uuid')
+    || normalized.includes('violates foreign key constraint');
+}
+
+export function isRecoverableLearningModulePersistenceError(message = '') {
+  return isLearningModuleConnectionsTableMissingMessage(message) || isTransientLearningModulePersistenceMessage(message);
+}
+
+function normalizePendingLearningModuleEntry(entry = {}) {
+  if (!entry?.module_id || !entry?.user_id) {
+    return null;
+  }
+
+  return {
+    module_id: entry.module_id,
+    module_slug: entry.module_slug || '',
+    user_id: entry.user_id,
+    queued_at: entry.queued_at || new Date().toISOString(),
+    reason: entry.reason || 'pending_sync'
+  };
+}
+
+async function readPendingLearningModuleConnectionStore() {
+  const { [STORAGE_KEYS.learningModulePendingConnections]: stored } = await getLocalStore(STORAGE_KEYS.learningModulePendingConnections);
+  return stored && typeof stored === 'object' ? stored : {};
+}
+
+async function writePendingLearningModuleConnectionStore(store) {
+  await setLocalStore({
+    [STORAGE_KEYS.learningModulePendingConnections]: store
+  });
+}
+
+async function getPendingLearningModuleConnectionsForUser(userId) {
+  if (!userId) {
+    return [];
+  }
+
+  const store = await readPendingLearningModuleConnectionStore();
+  return (store[userId] || []).map(normalizePendingLearningModuleEntry).filter(Boolean);
+}
+
+async function savePendingLearningModuleConnectionsForUser(userId, entries = []) {
+  if (!userId) {
+    return [];
+  }
+
+  const store = await readPendingLearningModuleConnectionStore();
+  const normalized = entries.map(normalizePendingLearningModuleEntry).filter(Boolean);
+
+  if (normalized.length) {
+    store[userId] = normalized;
+  } else {
+    delete store[userId];
+  }
+
+  await writePendingLearningModuleConnectionStore(store);
+  return normalized;
+}
+
+async function upsertPendingLearningModuleConnection(entry) {
+  const normalized = normalizePendingLearningModuleEntry(entry);
+  if (!normalized) {
+    return null;
+  }
+
+  const existing = await getPendingLearningModuleConnectionsForUser(normalized.user_id);
+  const next = [
+    normalized,
+    ...existing.filter((item) => item.module_id !== normalized.module_id)
+  ];
+  await savePendingLearningModuleConnectionsForUser(normalized.user_id, next);
+  return normalized;
+}
+
+async function removePendingLearningModuleConnection(userId, moduleId) {
+  const existing = await getPendingLearningModuleConnectionsForUser(userId);
+  await savePendingLearningModuleConnectionsForUser(userId, existing.filter((item) => item.module_id !== moduleId));
+}
+
+export async function fetchPendingLearningModuleConnectionsForCurrentUser() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return [];
+  }
+
+  return getPendingLearningModuleConnectionsForUser(user.id);
+}
+
+export async function syncPendingLearningModuleConnectionsForCurrentUser(availableModules = []) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { synced: [], remaining: [] };
+  }
+
+  const pending = await getPendingLearningModuleConnectionsForUser(user.id);
+  if (!pending.length) {
+    return { synced: [], remaining: [] };
+  }
+
+  const synced = [];
+  const remaining = [];
+  const moduleIdsBySlug = new Map((availableModules || [])
+    .filter((module) => module?.slug && module?.id)
+    .map((module) => [module.slug, module.id]));
+
+  for (const entry of pending) {
+    const targetModuleId = moduleIdsBySlug.get(entry.module_slug) || entry.module_id;
+    if (!targetModuleId || (String(targetModuleId).startsWith('starter-module-') && !moduleIdsBySlug.get(entry.module_slug))) {
+      remaining.push(entry);
+      continue;
+    }
+
+    try {
+      await connectCurrentUserToLearningModule(targetModuleId, {
+        moduleSlug: entry.module_slug,
+        allowQueue: false
+      });
+      synced.push({
+        ...entry,
+        module_id: targetModuleId
+      });
+    } catch (error) {
+      if (isRecoverableLearningModulePersistenceError(error?.message)) {
+        remaining.push(entry);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  await savePendingLearningModuleConnectionsForUser(user.id, remaining);
+  return { synced, remaining };
+}
+
 function normalizeLearningModuleCard(card, fallbackCard = {}, { moduleId, topicId, sortOrder = 0 } = {}) {
   const content = card?.content && typeof card.content === 'object' ? card.content : {};
   const fallbackSections = Array.isArray(fallbackCard.sections) ? fallbackCard.sections : [];
@@ -132,7 +288,8 @@ function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards
       const starterTopic = starterTopicsByTitle.get(topic.topic_title) || starterTopics[topicIndex] || null;
       const topicCards = cardsByTopicId.get(topic.id) || [];
       const fallbackCards = starterTopic?.cards || [];
-      const cardsToUse = (topicCards.length ? topicCards : fallbackCards).map((card, cardIndex) => (
+      const cardsSource = topicCards.length >= fallbackCards.length ? topicCards : fallbackCards;
+      const cardsToUse = cardsSource.map((card, cardIndex) => (
         normalizeLearningModuleCard(card, fallbackCards[cardIndex] || {}, {
           moduleId: module.id,
           topicId: topic.id,
@@ -1431,21 +1588,29 @@ export async function fetchLearningModuleConnectionsForCurrentUser() {
   });
 }
 
-export async function connectCurrentUserToLearningModule(moduleId) {
+export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug = '', allowQueue = true } = {}) {
   const user = await getCurrentUser();
   if (!user) {
     throw new Error('Please sign in to connect yourself to a learning module.');
   }
 
-  const existingRows = await restRequest('learning_module_connections', {
-    query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
-  });
-
-  if (existingRows?.length) {
-    return existingRows[0];
-  }
+  const pendingConnections = await getPendingLearningModuleConnectionsForUser(user.id);
+  const existingPending = pendingConnections.find((entry) => entry.module_id === moduleId);
 
   try {
+    const existingRows = await restRequest('learning_module_connections', {
+      query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+    });
+
+    if (existingRows?.length) {
+      await removePendingLearningModuleConnection(user.id, moduleId);
+      return {
+        status: 'connected',
+        connection: existingRows[0],
+        queued: false
+      };
+    }
+
     const rows = await restRequest('learning_module_connections', {
       method: 'POST',
       body: {
@@ -1454,17 +1619,42 @@ export async function connectCurrentUserToLearningModule(moduleId) {
       }
     });
 
-    return rows?.[0] || null;
+    await removePendingLearningModuleConnection(user.id, moduleId);
+    return {
+      status: 'connected',
+      connection: rows?.[0] || null,
+      queued: false
+    };
   } catch (error) {
     const normalizedMessage = String(error?.message || '').toLowerCase();
     if (normalizedMessage.includes('duplicate key') || normalizedMessage.includes('already exists')) {
       const rows = await restRequest('learning_module_connections', {
         query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
       });
-      return rows?.[0] || null;
+      await removePendingLearningModuleConnection(user.id, moduleId);
+      return {
+        status: 'connected',
+        connection: rows?.[0] || null,
+        queued: false
+      };
     }
 
-    throw error;
+    if (!allowQueue || !isRecoverableLearningModulePersistenceError(error?.message)) {
+      throw error;
+    }
+
+    const queuedConnection = existingPending || await upsertPendingLearningModuleConnection({
+      module_id: moduleId,
+      module_slug: moduleSlug,
+      user_id: user.id,
+      reason: isLearningModuleConnectionsTableMissingMessage(error?.message) ? 'setup_required' : 'waiting_for_supabase'
+    });
+
+    return {
+      status: queuedConnection?.reason === 'setup_required' ? 'setup_required' : 'queued',
+      connection: queuedConnection,
+      queued: true
+    };
   }
 }
 

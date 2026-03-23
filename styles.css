@@ -1712,6 +1712,8 @@ code {
   border-radius: 16px;
   background: rgba(248, 249, 255, 0.88);
   padding: 14px;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
 }
 
 .learning-module-topic-preview-header,
@@ -1727,6 +1729,36 @@ code {
 .learning-module-card-chip-row {
   display: grid;
   gap: 10px;
+}
+
+.learning-module-topic-toggle,
+.learning-module-topic-toggle-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.learning-module-topic-toggle {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.learning-module-topic-preview.is-open .learning-module-chevron {
+  transform: rotate(180deg);
+}
+
+.learning-module-topic-content {
+  display: none;
+}
+
+.learning-module-topic-content.is-open {
+  display: grid;
+  gap: 12px;
 }
 
 .learning-module-card-chip {
@@ -1786,6 +1818,63 @@ code {
 
 .learning-module-content-section p {
   line-height: 1.6;
+}
+
+.learning-module-content-section p,
+.learning-module-content-section li {
+  line-height: 1.68;
+}
+
+.rich-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.math-inline,
+.math-block {
+  font-family: "Times New Roman", Georgia, serif;
+  letter-spacing: 0.01em;
+}
+
+.math-inline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(49, 95, 244, 0.08);
+  color: var(--primary);
+}
+
+.math-block {
+  display: block;
+  overflow-x: auto;
+  padding: 14px 16px;
+  border: 1px solid rgba(49, 95, 244, 0.12);
+  border-radius: 14px;
+  background: rgba(244, 247, 255, 0.96);
+  color: var(--text);
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.math-frac {
+  display: inline-grid;
+  justify-items: center;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.12em;
+}
+
+.math-frac-top {
+  border-bottom: 1px solid currentColor;
+  padding: 0 0.22em;
+}
+
+.math-frac-bottom {
+  padding: 0 0.22em;
 }
 
 .learning-module-player-footer {

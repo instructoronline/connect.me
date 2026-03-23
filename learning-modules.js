@@ -1,120 +1,606 @@
 const starterModules = [
   {
-    slug: 'foundations-of-transformers',
-    title: 'Foundations of Transformers',
-    description: 'An introductory module covering the core ideas behind transformers, including sequence modeling, attention, tokens, embeddings, and why transformers became central to modern AI.',
-    icon: 'book-open',
-    sort_order: 1,
-    topics: [
+    "slug": "foundations-of-transformers",
+    "title": "Foundations of Transformers",
+    "description": "An introductory module covering the core ideas behind transformers, including sequence modeling, attention, tokens, embeddings, and why transformers became central to modern AI.",
+    "icon": "book-open",
+    "sort_order": 1,
+    "topics": [
       {
-        topic_title: 'Why transformers changed sequence modeling',
-        sort_order: 1,
-        summary: 'Understand the limitations of older sequence models and why attention-based architectures scaled better.',
-        cards: [
+        "topic_title": "Why transformers changed sequence modeling",
+        "sort_order": 1,
+        "summary": "Understand why attention-based models replaced recurrence for long-context, scalable learning.",
+        "cards": [
           {
-            title: 'The core problem',
-            card_type: 'concept',
-            subtopic_title: 'Long-range dependencies',
-            sections: [
-              { label: 'Short explanation', body: 'Language, code, and multimodal tasks require a model to relate distant pieces of information. Earlier recurrent models processed tokens step-by-step, so far-away context often became harder to preserve.' },
-              { label: 'Example', body: 'In “The animal didn’t cross the street because it was tired,” the word “it” depends on information that may be many tokens away.' },
-              { label: 'Intuition', body: 'A useful learner should be able to quickly glance back at all relevant context instead of carrying everything through a single hidden-state bottleneck.' },
-              { label: 'Key takeaway', body: 'Transformers were built to make context lookup direct, parallel, and scalable.' }
+            "title": "Definition: sequence modeling in context",
+            "card_type": "definition",
+            "subtopic_title": "What problem transformers solve",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Sequence modeling studies functions $f(x_1, \\ldots, x_n)$ that must predict, classify, or generate outputs while respecting order and context. In language modeling, the task is often $$p(x_1, \\ldots, x_n) = \\prod_{t=1}^{n} p(x_t \\mid x_{<t}).$$"
+              },
+              {
+                "label": "Explanation",
+                "body": "A useful sequence model must represent local syntax, long-range dependencies, and uncertainty about many possible continuations."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Transformers became dominant because they let the model retrieve relevant context directly instead of compressing all history into one narrow state."
+              }
             ]
           },
           {
-            title: 'Why recurrence struggled',
-            card_type: 'comparison',
-            subtopic_title: 'Sequential bottlenecks',
-            sections: [
-              { label: 'Short explanation', body: 'RNNs and LSTMs must process token 1 before token 2, token 2 before token 3, and so on. That slows training and makes optimization harder on long sequences.' },
-              { label: 'Pitfalls', body: 'Even with gating, recurrent models can still suffer from vanishing gradients, limited parallelism, and compressed memory.' },
-              { label: 'Connection to the broader problem', body: 'Modern AI workloads depend on large-scale training, so models that parallelize well have a major practical advantage.' }
+            "title": "Intuition: long-range dependency retrieval",
+            "card_type": "intuition",
+            "subtopic_title": "Why direct context lookup matters",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "When a reader resolves a pronoun, they mentally jump back to the earlier noun phrase that explains it. Attention gives the model a differentiable version of that jump."
+              },
+              {
+                "label": "Example",
+                "body": "In “The theorem was hard to prove because **it** required a new lemma,” the token **it** should recover context many positions earlier."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Transformers replace sequential memory pressure with content-addressable lookup."
+              }
             ]
           },
           {
-            title: 'Transformer mindset',
-            card_type: 'intuition',
-            subtopic_title: 'Attend instead of compress',
-            sections: [
-              { label: 'Short explanation', body: 'A transformer treats each token representation as something that can interact with every other token representation through attention.' },
-              { label: 'Visual description', body: 'Imagine a table of tokens where each token can draw weighted lines to the others, highlighting what matters for the current step.' },
-              { label: 'Key takeaway', body: 'Attention replaces a narrow memory path with direct, content-based access to context.' }
+            "title": "Why recurrence struggled at scale",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Bottlenecks in RNN-style processing",
+            "sections": [
+              {
+                "label": "Core limitation",
+                "body": "RNNs and LSTMs update hidden state one token at a time, so training depth grows with sequence length. That creates optimization difficulty and limits parallel hardware usage."
+              },
+              {
+                "label": "Mathematical view",
+                "body": "A recurrent model computes $h_t = g(h_{t-1}, x_t)$, so information from $x_1$ reaches $h_n$ only after many chained transformations."
+              },
+              {
+                "label": "Relevance",
+                "body": "Modern training workloads depend on matrix-heavy parallel computation, which aligns much better with transformer-style blocks."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of the transformer shift",
+            "card_type": "math",
+            "subtopic_title": "Parallel token interaction",
+            "sections": [
+              {
+                "label": "Formulation",
+                "body": "Given token representations $X \\in \\mathbb{R}^{n \times d}$, a self-attention layer forms $$Q = XW_Q,\\; K = XW_K,\\; V = XW_V,$$ then computes $$\\operatorname{Attn}(X) = \\operatorname{softmax}\\!\\left(\frac{QK^\top}{\\sqrt{d_k}}\right)V.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Every row of the attention matrix compares one token to all others at once, so long-range interaction no longer requires a sequential relay."
+              },
+              {
+                "label": "Why it matters",
+                "body": "The architecture exposes global context access while remaining compatible with efficient tensor kernels."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation from recurrence to attention",
+            "card_type": "derivation",
+            "subtopic_title": "From hidden-state compression to weighted retrieval",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Suppose the model needs token $x_i$ to use information from earlier position $j$. In a recurrent network, that evidence must be preserved indirectly through every intermediate state between $j$ and $i$."
+              },
+              {
+                "label": "Step 2",
+                "body": "In self-attention, token $i$ forms a query vector $q_i$ and compares it to all keys $k_j$ through scores $s_{ij} = q_i^\top k_j / \\sqrt{d_k}$."
+              },
+              {
+                "label": "Step 3",
+                "body": "Softmax normalizes scores into weights $\\alpha_{ij}$, and the output becomes $$o_i = \\sum_j \\alpha_{ij} v_j.$$"
+              },
+              {
+                "label": "Conclusion",
+                "body": "The model moves from “store everything in one rolling state” to “retrieve what is useful right now.”"
+              }
+            ]
+          },
+          {
+            "title": "Worked example: pronoun resolution",
+            "card_type": "worked-example",
+            "subtopic_title": "Context selection in practice",
+            "sections": [
+              {
+                "label": "Setup",
+                "body": "Consider the sentence “Maria thanked Jordan because **she** liked the solution.” A useful model should assign strong attention from **she** toward **Maria**."
+              },
+              {
+                "label": "Mechanism",
+                "body": "The query for **she** scores keys for earlier nouns. If the contextual representation around **Maria** better matches feminine and subject-role cues, its score rises."
+              },
+              {
+                "label": "Outcome",
+                "body": "The value vector associated with **Maria** contributes more strongly to the updated representation for **she**, improving downstream prediction."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: Attention Is All You Need",
+            "card_type": "research-connection",
+            "subtopic_title": "Historical shift in architecture design",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Vaswani et al. (2017) proposed abandoning recurrence in favor of stacked self-attention and feed-forward blocks, showing strong translation quality with much more parallel training."
+              },
+              {
+                "label": "Why the paper mattered",
+                "body": "The paper reframed sequence modeling as a retrieval-and-mixing problem rather than a purely recurrent dynamical system."
+              },
+              {
+                "label": "Reading guide",
+                "body": "When reading the paper, focus on the encoder-decoder stack, scaled dot-product attention, and the reported training-speed advantage."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls when explaining transformer success",
+            "card_type": "pitfall",
+            "subtopic_title": "What not to oversimplify",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "It is incorrect to say transformers “remember everything perfectly.” Attention is learned, approximate, and capacity-limited."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "Transformers did not win only because of bigger datasets; their optimization geometry and hardware efficiency also mattered."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Long context is not free. Standard attention has $O(n^2)$ score computation in sequence length."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of the attention matrix",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Reading attention as a map of relevance",
+            "sections": [
+              {
+                "label": "Conceptual picture",
+                "body": "The matrix $A = \\operatorname{softmax}(QK^\top / \\sqrt{d_k})$ can be read row-by-row. Row $i$ shows which positions token $i$ consults."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Bright diagonal mass suggests local context use; off-diagonal mass suggests long-range reference, copying, or structural dependence."
+              },
+              {
+                "label": "Why it matters",
+                "body": "This visualization gives an intuitive bridge between algebraic computation and linguistic behavior."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to modern ML systems",
+            "card_type": "ml-relevance",
+            "subtopic_title": "From NLP to general-purpose foundation models",
+            "sections": [
+              {
+                "label": "Systems relevance",
+                "body": "The same sequence-processing logic now powers large language models, vision transformers, speech systems, and multimodal assistants."
+              },
+              {
+                "label": "Scaling connection",
+                "body": "Because transformer blocks parallelize well, they fit accelerator hardware and large-batch optimization regimes used in production ML systems."
+              },
+              {
+                "label": "Takeaway",
+                "body": "The architecture changed not just model quality but the practical economics of large-scale learning."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Tokens and embeddings',
-        sort_order: 2,
-        summary: 'Learn how raw text becomes vectors the model can reason about.',
-        cards: [
+        "topic_title": "Tokens and embeddings",
+        "sort_order": 2,
+        "summary": "See how discrete symbols become geometry that a transformer can learn from.",
+        "cards": [
           {
-            title: 'From text to tokens',
-            card_type: 'concept',
-            subtopic_title: 'Tokenization',
-            sections: [
-              { label: 'Short explanation', body: 'Transformers do not read characters or words directly. They first map text into tokens such as words, subwords, or symbols.' },
-              { label: 'Example', body: '“unbelievable” might be split into “un”, “believ”, and “able”, allowing the model to reuse known pieces across many words.' },
-              { label: 'Pitfalls', body: 'Poor tokenization can make rare terms or multilingual text harder to represent efficiently.' }
+            "title": "Definition: tokenization and representation units",
+            "card_type": "definition",
+            "subtopic_title": "From raw strings to model symbols",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Tokenization maps raw text into a finite vocabulary of units such as words, subwords, or byte-level pieces. A sequence becomes integer ids $(t_1, \\ldots, t_n)$ before entering the model."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Vocabulary design controls sequence length, multilingual coverage, and how well rare terms can be represented."
+              },
+              {
+                "label": "Connection",
+                "body": "Good tokenization is the first stage of transformer efficiency."
+              }
             ]
           },
           {
-            title: 'Embeddings create meaning-rich vectors',
-            card_type: 'concept',
-            subtopic_title: 'Representation space',
-            sections: [
-              { label: 'Short explanation', body: 'Each token is mapped to a dense vector. Nearby vectors can represent similar syntactic or semantic roles.' },
-              { label: 'Intuition', body: 'Instead of storing a dictionary definition, the model stores a coordinate in a learned space where related concepts land near one another.' },
-              { label: 'Formula', body: 'Embedding lookup can be written as x_i = E[t_i], where E is the embedding matrix and t_i is the token id.' },
-              { label: 'Key takeaway', body: 'Embeddings turn discrete symbols into trainable numerical representations.' }
+            "title": "Intuition: embeddings as learned coordinates",
+            "card_type": "intuition",
+            "subtopic_title": "Meaning becomes geometry",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "An embedding places each token at a point in a learned vector space. Nearby points often share semantic, syntactic, or functional behavior."
+              },
+              {
+                "label": "Analogy",
+                "body": "Instead of a dictionary entry, the model gets a coordinate whose relative position tells the network how a token behaves with others."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Embedding spaces turn discrete identity into trainable geometry."
+              }
             ]
           },
           {
-            title: 'Position still matters',
-            card_type: 'concept',
-            subtopic_title: 'Ordering information',
-            sections: [
-              { label: 'Short explanation', body: 'Attention alone is permutation-friendly, so transformers need position information to distinguish “dog bites man” from “man bites dog.”' },
-              { label: 'Example', body: 'Positional encodings or learned positional embeddings are added to token embeddings before attention layers begin.' },
-              { label: 'Connection to the broader problem', body: 'Sequence tasks require both content and order, so representation quality depends on combining them cleanly.' }
+            "title": "Why embeddings matter for downstream learning",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Representation quality before attention",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "Attention can only compare and mix what the embeddings make available. Weak embeddings produce weak context reasoning."
+              },
+              {
+                "label": "Practical implication",
+                "body": "Vocabulary coverage, embedding dimension, and initialization influence both sample efficiency and final model quality."
+              },
+              {
+                "label": "ML relevance",
+                "body": "Embedding tables are often among the most frequently accessed parameters in large-scale training."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of embedding lookup",
+            "card_type": "math",
+            "subtopic_title": "The embedding matrix",
+            "sections": [
+              {
+                "label": "Formula",
+                "body": "If $E \\in \\mathbb{R}^{|V| \times d}$ is the embedding matrix and $t_i$ is a token id, then the embedded vector is $$x_i = E[t_i].$$ With one-hot vector $e_{t_i}$, the same lookup is $$x_i = e_{t_i}^\top E.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Only one row of $E$ is selected per token, but gradients update that row over many training steps."
+              },
+              {
+                "label": "Why it matters",
+                "body": "This lookup is simple mathematically yet foundational to every later transformer layer."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of positional information",
+            "card_type": "derivation",
+            "subtopic_title": "Why order must be injected",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Self-attention compares token content, but by itself it is permutation-friendly. If two sequences contain the same tokens in different orders, raw attention cannot distinguish them reliably."
+              },
+              {
+                "label": "Step 2",
+                "body": "Add a position-dependent vector $p_i$ to each embedding so the actual input becomes $$h_i^{(0)} = x_i + p_i.$$"
+              },
+              {
+                "label": "Step 3",
+                "body": "Now content and order jointly influence queries, keys, and values, so the model can separate “dog bites man” from “man bites dog.”"
+              }
+            ]
+          },
+          {
+            "title": "Worked example: subword composition",
+            "card_type": "worked-example",
+            "subtopic_title": "Handling rare words",
+            "sections": [
+              {
+                "label": "Example",
+                "body": "A word such as “electromagnetism” might be segmented into smaller units like “electro”, “magnet”, and “ism”."
+              },
+              {
+                "label": "Mechanism",
+                "body": "The model assigns embeddings to each unit, then later layers combine them contextually. This lets the model generalize to words it did not see often as whole units."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Subwords trade slightly longer sequences for better vocabulary efficiency."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: word vectors to contextual embeddings",
+            "card_type": "research-connection",
+            "subtopic_title": "Static and contextual representation learning",
+            "sections": [
+              {
+                "label": "Paper lineage",
+                "body": "Earlier methods such as word2vec and GloVe learned one vector per word type. Transformer-era models such as BERT made token representations contextual, so the same token can shift meaning across sentences."
+              },
+              {
+                "label": "Why this matters",
+                "body": "Contextualization is one of the biggest qualitative jumps from classical embeddings to modern language models."
+              },
+              {
+                "label": "Reading guide",
+                "body": "When reading representation papers, ask whether the vector is static, contextual, pretrained, or task-specific."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in token and embedding design",
+            "card_type": "pitfall",
+            "subtopic_title": "Mistakes that reduce model quality",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "Using too small a vocabulary can create unnecessarily long sequences that increase compute cost."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "Using too large a vocabulary can waste parameters and make rare-token learning sparse."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Ignoring positional information leads to representations that lose order-sensitive meaning."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of embedding space",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Geometry of similarity",
+            "sections": [
+              {
+                "label": "Conceptual picture",
+                "body": "Imagine plotting token vectors in a very high-dimensional cloud. Clusters emerge for function words, punctuation, domain-specific terms, or semantically related items."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Although individual dimensions are rarely human-readable, relative distances and directions encode useful structure."
+              },
+              {
+                "label": "Relevance",
+                "body": "Attention uses this learned geometry as raw material for context-sensitive retrieval."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to transformers and large-scale ML",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Embeddings as infrastructure",
+            "sections": [
+              {
+                "label": "Transformer relevance",
+                "body": "Embedding and output projection choices affect parameter sharing, memory usage, multilingual transfer, and adaptation with techniques like LoRA or prompt tuning."
+              },
+              {
+                "label": "Implementation implication",
+                "body": "Many systems tie input embeddings and output weights so that the logits use the same learned geometry."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Tokens and embeddings are not a preprocessing afterthought; they are part of the model architecture."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Attention as the lesson engine',
-        sort_order: 3,
-        summary: 'See how self-attention scores relationships and why it powers guided reasoning through a sequence.',
-        cards: [
+        "topic_title": "Attention as the lesson engine",
+        "sort_order": 3,
+        "summary": "Study attention as the mechanism that scores context, mixes information, and drives adaptive reasoning.",
+        "cards": [
           {
-            title: 'Self-attention basics',
-            card_type: 'concept',
-            subtopic_title: 'Context weighting',
-            sections: [
-              { label: 'Short explanation', body: 'For each token, self-attention computes how strongly it should focus on every other token in the same sequence.' },
-              { label: 'Formula', body: 'Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V.' },
-              { label: 'Intuition', body: 'Queries ask “what am I looking for?”, keys advertise “what do I contain?”, and values carry the information that gets blended.' }
+            "title": "Definition: self-attention",
+            "card_type": "definition",
+            "subtopic_title": "Adaptive context weighting",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Self-attention updates each token by computing a weighted combination of value vectors from the same sequence. The weights depend on learned compatibility scores between queries and keys."
+              },
+              {
+                "label": "Core equation",
+                "body": "$$\\operatorname{Attn}(Q,K,V) = \\operatorname{softmax}\\!\\left(\frac{QK^\top}{\\sqrt{d_k}}\right)V.$$"
+              },
+              {
+                "label": "Why it matters",
+                "body": "The mechanism lets a token decide what evidence to retrieve at each layer."
+              }
             ]
           },
           {
-            title: 'Why scaling and softmax appear',
-            card_type: 'math',
-            subtopic_title: 'Stable scoring',
-            sections: [
-              { label: 'Short explanation', body: 'The dot product QK^T can grow with dimension. Dividing by sqrt(d_k) keeps logits from becoming too extreme before softmax.' },
-              { label: 'Derivation', body: 'If query and key components are roughly unit-variance, their dot product variance grows with d_k, so scaling normalizes that growth.' },
-              { label: 'Key takeaway', body: 'The scaling term helps attention stay trainable and avoids overly peaked distributions early in learning.' }
+            "title": "Intuition: a lesson engine for each token",
+            "card_type": "intuition",
+            "subtopic_title": "Dynamic retrieval over the sequence",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "Each token asks a context question: “Which other positions can teach me what I need right now?”"
+              },
+              {
+                "label": "Interpretation",
+                "body": "The answer is not fixed. Different layers and heads can consult different evidence for syntax, reference, reasoning, or copying."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Attention turns a static sequence into an adaptive information-routing system."
+              }
             ]
           },
           {
-            title: 'Why transformers generalize well',
-            card_type: 'synthesis',
-            subtopic_title: 'Flexible context use',
-            sections: [
-              { label: 'Short explanation', body: 'Because each layer can recompute which context matters, transformers can build richer representations than fixed-window or purely sequential systems.' },
-              { label: 'Visual description', body: 'Across layers, the network repeatedly redraws an importance map over the sequence, sharpening useful relationships.' },
-              { label: 'Connection to the broader problem', body: 'This flexibility is a major reason transformers became the foundation for language, vision, audio, and multimodal systems.' }
+            "title": "Why attention matters beyond language",
+            "card_type": "why-it-matters",
+            "subtopic_title": "A general differentiable retrieval primitive",
+            "sections": [
+              {
+                "label": "Broader relevance",
+                "body": "The same mechanism works for image patches, speech frames, video tokens, and multimodal representations because it only assumes a set or sequence of vectors."
+              },
+              {
+                "label": "Systems value",
+                "body": "Attention provides one reusable interface for context selection across domains."
+              },
+              {
+                "label": "Takeaway",
+                "body": "This generality is a major reason transformers became the default foundation-model architecture."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of scaled dot-product attention",
+            "card_type": "math",
+            "subtopic_title": "Scores, probabilities, and weighted sums",
+            "sections": [
+              {
+                "label": "Score matrix",
+                "body": "For token matrix $X$, define $$S = \frac{QK^\top}{\\sqrt{d_k}} \\in \\mathbb{R}^{n \times n}.$$ Entry $S_{ij}$ measures how relevant token $j$ is to token $i$."
+              },
+              {
+                "label": "Normalized weights",
+                "body": "Apply softmax row-wise so that $$\\alpha_{ij} = \frac{\\exp(S_{ij})}{\\sum_{m=1}^{n} \\exp(S_{im})}, \\qquad \\sum_j \\alpha_{ij} = 1.$$"
+              },
+              {
+                "label": "Output",
+                "body": "The updated token is $$o_i = \\sum_{j=1}^{n} \\alpha_{ij} v_j.$$"
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of the scaling factor",
+            "card_type": "derivation",
+            "subtopic_title": "Why divide by $\\sqrt{d_k}$",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Assume query and key coordinates are roughly zero-mean with unit variance. Then the unscaled dot product $q_i^\top k_j = \\sum_{r=1}^{d_k} q_{ir}k_{jr}$ has variance that grows with $d_k$."
+              },
+              {
+                "label": "Step 2",
+                "body": "Large variance pushes logits into extremes, making softmax overly sharp and gradients unstable."
+              },
+              {
+                "label": "Step 3",
+                "body": "Dividing by $\\sqrt{d_k}$ rescales the score distribution so softmax operates in a trainable range."
+              },
+              {
+                "label": "Conclusion",
+                "body": "The scaling term is a stability device, not an arbitrary constant."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: weighted averaging",
+            "card_type": "worked-example",
+            "subtopic_title": "From scores to updated representation",
+            "sections": [
+              {
+                "label": "Example setup",
+                "body": "Suppose one query scores three tokens with logits $(2.0, 0.5, -1.0)$. Softmax converts them into positive weights that sum to $1$."
+              },
+              {
+                "label": "Interpretation",
+                "body": "The first token receives most attention mass, but the output is still a blend of all three value vectors rather than a hard lookup."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Attention behaves like soft retrieval: differentiable, trainable, and context-sensitive."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: interpretability and induction heads",
+            "card_type": "research-connection",
+            "subtopic_title": "Patterns that emerge in trained transformers",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Mechanistic interpretability work has identified attention heads that copy tokens, track delimiters, or induce repeated patterns. These studies use attention structure as a window into model behavior."
+              },
+              {
+                "label": "Why this matters",
+                "body": "Attention is not just a training device; it creates analyzable routing motifs that help researchers understand transformer computation."
+              },
+              {
+                "label": "Reading guide",
+                "body": "Look for how heads specialize, where they attend, and whether the observed pattern is causal or merely correlational."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in attention intuition",
+            "card_type": "pitfall",
+            "subtopic_title": "Interpretation caveats",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "Attention weights are not always a full explanation of model decisions. MLP blocks, residual mixing, and later layers also matter."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "A high attention score does not automatically mean semantic importance in the human sense."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Attention maps are useful diagnostics, but they should be paired with causal tests when possible."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation: rows, columns, and patterns",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "How to read an attention heatmap",
+            "sections": [
+              {
+                "label": "Heatmap reading",
+                "body": "Rows correspond to querying tokens and columns to candidate context tokens. Strong diagonal bands suggest local smoothing; repeated stripes suggest global references such as punctuation or separators."
+              },
+              {
+                "label": "Conceptual value",
+                "body": "The heatmap makes an abstract matrix multiplication feel like a structured reasoning pattern."
+              },
+              {
+                "label": "Why it matters",
+                "body": "This view is especially useful for debugging masking, copying, and long-context behavior."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to transformer systems",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Attention in production-scale models",
+            "sections": [
+              {
+                "label": "Implementation implication",
+                "body": "Because attention has quadratic score computation in standard form, systems work focuses on memory layout, flash attention kernels, chunking, and long-context approximations."
+              },
+              {
+                "label": "Transformer relevance",
+                "body": "Almost every modern foundation model still relies on attention, even when augmented with efficient variants or external memory."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Understanding attention is essential for both theory and systems optimization."
+              }
             ]
           }
         ]
@@ -122,119 +608,611 @@ const starterModules = [
     ]
   },
   {
-    slug: 'mathematical-foundations-of-transformers',
-    title: 'Mathematical Foundations of Transformers',
-    description: 'A mathematically focused module covering the linear algebra, probability, optimization, and matrix operations that support transformer models.',
-    icon: 'book-open',
-    sort_order: 2,
-    topics: [
+    "slug": "mathematical-foundations-of-transformers",
+    "title": "Mathematical Foundations of Transformers",
+    "description": "A mathematically focused module covering the linear algebra, probability, optimization, and matrix operations that support transformer models.",
+    "icon": "book-open",
+    "sort_order": 2,
+    "topics": [
       {
-        topic_title: 'Vectors, matrices, and similarity',
-        sort_order: 1,
-        summary: 'Build intuition for the algebraic objects used throughout embedding and attention computations.',
-        cards: [
+        "topic_title": "Vectors, matrices, and similarity",
+        "sort_order": 1,
+        "summary": "Build the algebraic intuition needed to read transformer equations confidently.",
+        "cards": [
           {
-            title: 'Vectors as feature bundles',
-            card_type: 'concept',
-            subtopic_title: 'Coordinate meaning',
-            sections: [
-              { label: 'Short explanation', body: 'A vector is an ordered list of numbers representing features. In transformers, vectors describe token meaning, layer activations, and learned projections.' },
-              { label: 'Example', body: 'A token embedding in R^d may encode tense, topic, syntax, and many other learned factors simultaneously.' },
-              { label: 'Intuition', body: 'Think of each dimension as a dial the network can tune when comparing or combining concepts.' }
+            "title": "Definition: vectors and feature spaces",
+            "card_type": "definition",
+            "subtopic_title": "Representations in $\\mathbb{R}^d$",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "A vector $x \\in \\mathbb{R}^d$ is an ordered collection of $d$ numbers. In transformers, vectors represent token embeddings, hidden activations, gradients, and parameter directions."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Once language is expressed as vectors, the model can compare, rotate, project, and combine meaning using linear algebra."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Vector spaces are the native language of transformer computation."
+              }
             ]
           },
           {
-            title: 'Dot products measure alignment',
-            card_type: 'math',
-            subtopic_title: 'Similarity scoring',
-            sections: [
-              { label: 'Formula', body: 'For vectors a and b, the dot product is a · b = Σ_i a_i b_i.' },
-              { label: 'Short explanation', body: 'Large positive dot products indicate alignment, small values indicate weak relation, and negative values indicate opposing directions.' },
-              { label: 'Connection to the broader problem', body: 'Attention uses dot products to decide which tokens should influence one another.' }
+            "title": "Intuition: similarity as directional agreement",
+            "card_type": "intuition",
+            "subtopic_title": "What the dot product is measuring",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "If two vectors point in similar directions, their dot product is large. If they are orthogonal, their interaction is weak. If they point against each other, it can be negative."
+              },
+              {
+                "label": "Geometric view",
+                "body": "The relation $$a^\top b = \\|a\\|\\,\\|b\\|\\cos \theta$$ links algebraic similarity to angle."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Attention scores are built from this directional agreement idea."
+              }
             ]
           },
           {
-            title: 'Matrices as batched transformations',
-            card_type: 'concept',
-            subtopic_title: 'Linear maps',
-            sections: [
-              { label: 'Short explanation', body: 'A matrix can rotate, scale, or mix vector dimensions. Transformers use matrices to project embeddings into query, key, and value spaces.' },
-              { label: 'Example', body: 'If X is the token matrix, then Q = XW_Q, K = XW_K, and V = XW_V are three learned views of the same sequence.' },
-              { label: 'Key takeaway', body: 'Matrix multiplication lets the model transform every token representation in parallel.' }
+            "title": "Why matrix operations matter",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Parallel computation over all tokens",
+            "sections": [
+              {
+                "label": "Core idea",
+                "body": "A matrix can apply the same learned transformation to every token in a sequence simultaneously."
+              },
+              {
+                "label": "Formula",
+                "body": "If $X \\in \\mathbb{R}^{n \times d}$ stores $n$ token vectors, then $$Q = XW_Q$$ computes all query vectors in one batched multiplication."
+              },
+              {
+                "label": "Systems relevance",
+                "body": "This is exactly why GPUs and TPUs are so effective for transformer training."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of norms and cosine similarity",
+            "card_type": "math",
+            "subtopic_title": "Magnitude versus direction",
+            "sections": [
+              {
+                "label": "Norm",
+                "body": "The Euclidean norm of $x$ is $$\\|x\\|_2 = \\sqrt{\\sum_{i=1}^{d} x_i^2}.$$"
+              },
+              {
+                "label": "Cosine similarity",
+                "body": "$$\\cos(x,y) = \frac{x^\top y}{\\|x\\|_2\\,\\|y\\|_2}. $$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Dot products mix magnitude and direction; cosine similarity isolates directional alignment."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of matrix multiplication in attention",
+            "card_type": "derivation",
+            "subtopic_title": "From single vectors to batched scoring",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "For a single query $q_i$ and all keys $K$, scores are $s_i = q_i K^\top$."
+              },
+              {
+                "label": "Step 2",
+                "body": "Stacking all queries into $Q$ gives the full score matrix $$S = QK^\top.$$"
+              },
+              {
+                "label": "Step 3",
+                "body": "This compact matrix formula performs every pairwise query-key comparison at once."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Transformer algebra is often just the batched form of simple vector operations."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: two vectors and a score",
+            "card_type": "worked-example",
+            "subtopic_title": "Computing alignment",
+            "sections": [
+              {
+                "label": "Example",
+                "body": "Let $a = (1,2)$ and $b = (3,4)$. Then $$a^\top b = 1\\cdot 3 + 2\\cdot 4 = 11.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "The positive score indicates strong alignment in this tiny feature space."
+              },
+              {
+                "label": "Connection",
+                "body": "Attention generalizes this same idea to high-dimensional learned vectors."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: embedding geometry and representation analysis",
+            "card_type": "research-connection",
+            "subtopic_title": "How researchers study vector spaces",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Representation-analysis papers inspect anisotropy, clustering, linear probes, and spectral structure of embeddings to understand what models encode."
+              },
+              {
+                "label": "Why it matters",
+                "body": "These studies connect pure linear algebra to empirical questions about syntax, semantics, and memorization."
+              },
+              {
+                "label": "Reading guide",
+                "body": "Pay attention to which properties are geometric, which are task-specific, and which are artifacts of training scale."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in linear algebra explanations",
+            "card_type": "pitfall",
+            "subtopic_title": "Avoiding shallow math intuition",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "A vector dimension should not be interpreted too literally as one human-readable concept."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "High dot product does not guarantee semantic equivalence; magnitude and training objectives matter."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Matrix multiplication is not “just bookkeeping”; it is the core mechanism for learned transformations."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of vector geometry",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Points, angles, and projections",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "In low dimensions you can picture vectors as arrows. In high dimensions, the same ideas of length, angle, and projection still apply even though we cannot draw them directly."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Attention asks whether the query arrow and key arrow align enough to justify information flow."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Geometry remains a useful intuition even when the actual space is huge."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to transformer systems and ML engineering",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Linear algebra as implementation substrate",
+            "sections": [
+              {
+                "label": "Engineering relevance",
+                "body": "Kernel fusion, tensor layouts, precision formats, and sharding strategies are all organized around efficient matrix computation."
+              },
+              {
+                "label": "Transformer relevance",
+                "body": "Without batched linear algebra, large attention models would be impractical to train."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Understanding the math helps explain the systems design choices used in production."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Softmax and probability flow',
-        sort_order: 2,
-        summary: 'Understand how raw scores become normalized attention weights and output probabilities.',
-        cards: [
+        "topic_title": "Softmax and probability flow",
+        "sort_order": 2,
+        "summary": "Understand how raw scores become normalized weights and probabilistic outputs.",
+        "cards": [
           {
-            title: 'What softmax does',
-            card_type: 'math',
-            subtopic_title: 'Normalize scores',
-            sections: [
-              { label: 'Formula', body: 'softmax(z_i) = exp(z_i) / Σ_j exp(z_j).' },
-              { label: 'Short explanation', body: 'Softmax converts arbitrary logits into non-negative values that sum to one, making them behave like a distribution over choices.' },
-              { label: 'Example', body: 'If one token receives a much larger compatibility score, softmax will assign that token a larger share of attention mass.' }
+            "title": "Definition: softmax normalization",
+            "card_type": "definition",
+            "subtopic_title": "Turning logits into a distribution",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Softmax maps a vector of logits $z$ to positive values that sum to one: $$\\operatorname{softmax}(z_i) = \frac{e^{z_i}}{\\sum_j e^{z_j}}.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Larger logits get larger mass, but every option still retains a differentiable share."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Attention and token prediction both rely on this normalization pattern."
+              }
             ]
           },
           {
-            title: 'Why softmax fits attention',
-            card_type: 'intuition',
-            subtopic_title: 'Weighted focus',
-            sections: [
-              { label: 'Intuition', body: 'Attention should decide how to distribute focus across context. Softmax gives a clean way to turn preferences into weights.' },
-              { label: 'Pitfalls', body: 'Overly sharp softmax outputs can make a model attend too narrowly, while very flat outputs may dilute useful context.' },
-              { label: 'Key takeaway', body: 'Softmax creates a learnable balance between concentration and spread.' }
+            "title": "Intuition: competition among alternatives",
+            "card_type": "intuition",
+            "subtopic_title": "Why normalization changes relative influence",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "Softmax makes choices compete. Increasing one logit raises its probability while shrinking the remaining mass available to others."
+              },
+              {
+                "label": "Comparison",
+                "body": "Unlike independent sigmoid outputs, softmax creates a coupled distribution over mutually competing options."
+              },
+              {
+                "label": "Takeaway",
+                "body": "This competition is exactly what attention needs when deciding which tokens to emphasize."
+              }
             ]
           },
           {
-            title: 'Expectation viewpoint',
-            card_type: 'synthesis',
-            subtopic_title: 'Weighted averages',
-            sections: [
-              { label: 'Short explanation', body: 'After softmax, attention forms a weighted sum of value vectors. This can be viewed as taking an expectation over candidate context vectors.' },
-              { label: 'Formula', body: 'output_i = Σ_j α_ij v_j, where α_ij are normalized attention weights.' },
-              { label: 'Connection to the broader problem', body: 'The entire attention mechanism is a differentiable way to retrieve relevant information by averaging over context.' }
+            "title": "Why probability flow matters in transformers",
+            "card_type": "why-it-matters",
+            "subtopic_title": "From scores to usable attention weights",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "A raw score matrix has no guarantee of positivity or normalization. Softmax converts it into interpretable weighting coefficients."
+              },
+              {
+                "label": "Formula",
+                "body": "For each row $i$, attention uses weights $\\alpha_{ij}$ with $$\\sum_j \\alpha_{ij} = 1.$$"
+              },
+              {
+                "label": "Relevance",
+                "body": "This lets the output be read as a convex mixture of value vectors."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of log-sum-exp stability",
+            "card_type": "math",
+            "subtopic_title": "Numerically safe softmax",
+            "sections": [
+              {
+                "label": "Stable form",
+                "body": "To avoid overflow, compute $$\\operatorname{softmax}(z_i) = \frac{e^{z_i - m}}{\\sum_j e^{z_j - m}}, \\qquad m = \\max_j z_j.$$"
+              },
+              {
+                "label": "Why it works",
+                "body": "Subtracting the same constant from every logit does not change the final probabilities."
+              },
+              {
+                "label": "Implementation implication",
+                "body": "This trick is used in nearly every production softmax kernel."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of attention as an expectation",
+            "card_type": "derivation",
+            "subtopic_title": "Weighted averages from probabilities",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Compute normalized weights $\\alpha_{ij}$ from logits."
+              },
+              {
+                "label": "Step 2",
+                "body": "Use those weights to form $$o_i = \\sum_j \\alpha_{ij} v_j.$$"
+              },
+              {
+                "label": "Step 3",
+                "body": "Because the weights are non-negative and sum to one, the output is an expectation-like average over candidate values."
+              },
+              {
+                "label": "Conclusion",
+                "body": "Attention is a probabilistic routing rule expressed through linear algebra."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: softmax on three logits",
+            "card_type": "worked-example",
+            "subtopic_title": "Interpreting normalized scores",
+            "sections": [
+              {
+                "label": "Example",
+                "body": "For logits $(1,0,-1)$, the exponentials are approximately $(e,1,e^{-1})$. Softmax rescales these into a probability vector whose entries sum to $1$."
+              },
+              {
+                "label": "Interpretation",
+                "body": "The highest logit wins the most mass, but lower-scoring options still contribute proportionally."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Softmax creates graded preference rather than a brittle hard choice."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: calibration and uncertainty",
+            "card_type": "research-connection",
+            "subtopic_title": "Probabilities are useful but imperfect",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Research on calibration studies whether softmax probabilities match actual correctness frequencies. Large models can be very capable while still being miscalibrated."
+              },
+              {
+                "label": "Why this matters",
+                "body": "Probabilities are used for decoding, confidence estimation, and evaluation, so their reliability matters."
+              },
+              {
+                "label": "Reading guide",
+                "body": "Look for temperature scaling, entropy, and expected calibration error when reading this literature."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls with softmax reasoning",
+            "card_type": "pitfall",
+            "subtopic_title": "Sharpness is not always confidence",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "A very sharp softmax can arise from large logits even when the model is wrong."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "Comparing softmax probabilities across different contexts can be misleading because the underlying logit scales differ."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Softmax does not prevent attention from being diffuse or noisy if the score matrix is weak."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of probability flow",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Mass redistribution across tokens",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "Imagine each row of logits as a pile of raw preference scores. Softmax redistributes that pile into normalized mass over available context positions."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Sharper rows correspond to focused retrieval; flatter rows correspond to broad averaging."
+              },
+              {
+                "label": "Relevance",
+                "body": "This visual helps explain why temperature and scaling change model behavior."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to attention, decoding, and optimization",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Softmax everywhere in transformers",
+            "sections": [
+              {
+                "label": "Transformer relevance",
+                "body": "Softmax appears in attention weights, next-token prediction, contrastive objectives, and distillation losses."
+              },
+              {
+                "label": "Implementation implication",
+                "body": "Efficiency tricks such as fused softmax kernels and flash attention matter because normalization is used constantly during training and inference."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Softmax is a small equation with outsized importance in transformer systems."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Optimization and training stability',
-        sort_order: 3,
-        summary: 'Review the gradient-based ideas that make large transformer training feasible.',
-        cards: [
+        "topic_title": "Optimization and training stability",
+        "sort_order": 3,
+        "summary": "Learn why deep transformer training works only when gradients, normalization, and schedules are managed carefully.",
+        "cards": [
           {
-            title: 'Gradients tell parameters how to move',
-            card_type: 'math',
-            subtopic_title: 'Backpropagation overview',
-            sections: [
-              { label: 'Short explanation', body: 'Training adjusts parameters to reduce loss. Gradients measure how sensitive the loss is to each parameter.' },
-              { label: 'Example', body: 'If changing one weight slightly causes the loss to increase, gradient descent nudges that weight in the opposite direction.' },
-              { label: 'Key takeaway', body: 'Backpropagation efficiently computes all these sensitivities across a deep network.' }
+            "title": "Definition: optimization in deep learning",
+            "card_type": "definition",
+            "subtopic_title": "Minimizing training loss",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Optimization chooses parameters $\theta$ to reduce an objective $L(\theta)$, often with stochastic gradient methods that update $$\theta \\leftarrow \theta - \\eta \nabla_\theta L.$$"
+              },
+              {
+                "label": "Why it matters",
+                "body": "A strong architecture can still fail if optimization is unstable, slow, or poorly conditioned."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Training success depends on both model design and optimization geometry."
+              }
             ]
           },
           {
-            title: 'Why normalization and residuals help optimization',
-            card_type: 'concept',
-            subtopic_title: 'Stable signal flow',
-            sections: [
-              { label: 'Short explanation', body: 'Deep models can become hard to train if activations explode, vanish, or drift. Residual pathways and normalization layers keep signal magnitudes more manageable.' },
-              { label: 'Intuition', body: 'A residual path gives each layer a safe default behavior: keep useful information unless a learned transformation improves it.' },
-              { label: 'Connection to the broader problem', body: 'Training stability is not just a math detail; it directly determines whether large transformers converge.' }
+            "title": "Intuition: gradients as local advice",
+            "card_type": "intuition",
+            "subtopic_title": "What backpropagation provides",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "A gradient tells each parameter which direction would most quickly increase the loss. Moving in the opposite direction usually lowers it locally."
+              },
+              {
+                "label": "Context",
+                "body": "In a deep transformer, these signals pass through attention, MLPs, residual paths, and normalization layers."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Stable gradient flow is essential for making depth trainable."
+              }
             ]
           },
           {
-            title: 'Optimization in practice',
-            card_type: 'synthesis',
-            subtopic_title: 'Scaling training',
-            sections: [
-              { label: 'Short explanation', body: 'Large transformer training typically uses adaptive optimizers, learning-rate schedules, gradient clipping, and careful initialization.' },
-              { label: 'Pitfalls', body: 'Unstable hyperparameters can lead to divergence, slow learning, or brittle generalization.' },
-              { label: 'Key takeaway', body: 'Modern transformer performance depends on both architecture and disciplined optimization.' }
+            "title": "Why training stability matters at scale",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Deep stacks magnify small mistakes",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "Large models amplify bad initialization, poor learning-rate choices, and unstable activation statistics."
+              },
+              {
+                "label": "Practical impact",
+                "body": "Instability wastes compute, harms convergence, and can produce sudden divergence late in training."
+              },
+              {
+                "label": "ML relevance",
+                "body": "Optimization discipline is one reason state-of-the-art training pipelines are so carefully engineered."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of adaptive updates",
+            "card_type": "math",
+            "subtopic_title": "Why Adam-like optimizers help",
+            "sections": [
+              {
+                "label": "Update form",
+                "body": "Adam maintains moving averages of gradients $m_t$ and squared gradients $v_t$, then updates roughly as $$\theta_t = \theta_{t-1} - \\eta \frac{\\hat m_t}{\\sqrt{\\hat v_t} + \\epsilon}. $$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Parameters with consistently large gradient variance are scaled more cautiously."
+              },
+              {
+                "label": "Why it matters",
+                "body": "This adaptivity is especially useful in very high-dimensional transformer parameter spaces."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of residual-stability intuition",
+            "card_type": "derivation",
+            "subtopic_title": "Why skip pathways help gradients survive",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "A residual block computes $y = x + F(x)$. If $F(x)$ is initially small, the layer is close to an identity map."
+              },
+              {
+                "label": "Step 2",
+                "body": "The derivative of the identity path contributes a direct gradient route even when the learned branch is imperfect."
+              },
+              {
+                "label": "Step 3",
+                "body": "This reduces the risk that deep stacks destroy information or gradients completely."
+              },
+              {
+                "label": "Conclusion",
+                "body": "Residual structure improves trainability by preserving a stable default pathway."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: learning-rate warmup",
+            "card_type": "worked-example",
+            "subtopic_title": "Controlling early training dynamics",
+            "sections": [
+              {
+                "label": "Scenario",
+                "body": "At the start of training, parameter scales and optimizer statistics are not yet reliable. A large step size can destabilize updates."
+              },
+              {
+                "label": "Mechanism",
+                "body": "Warmup begins with smaller learning rates and gradually increases them, giving the optimizer time to estimate useful moments."
+              },
+              {
+                "label": "Takeaway",
+                "body": "A simple schedule choice can be the difference between convergence and divergence."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: normalization and scaling laws",
+            "card_type": "research-connection",
+            "subtopic_title": "What large-model training studies examine",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Scaling-law and training-dynamics papers examine how loss changes with data, parameters, compute, normalization strategy, and optimizer settings."
+              },
+              {
+                "label": "Why this matters",
+                "body": "These results guide how practitioners budget compute and choose stable training recipes."
+              },
+              {
+                "label": "Reading guide",
+                "body": "Track whether a paper is isolating architecture effects, optimization effects, or data effects."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in optimization discussions",
+            "card_type": "pitfall",
+            "subtopic_title": "What people often overlook",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "It is misleading to attribute success only to the optimizer; architecture and data distribution also shape the loss landscape."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "Stable training loss does not guarantee good validation behavior."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Gradient clipping is not a substitute for sound learning-rate and normalization choices."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of training stability",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Loss curves and gradient health",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "Healthy training often shows a downward-trending loss curve with manageable noise. Sudden spikes, NaNs, or persistent oscillation suggest unstable updates."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Normalization, residual design, and schedule tuning all shape whether the curve behaves smoothly."
+              },
+              {
+                "label": "Relevance",
+                "body": "These diagnostics are practical tools for running transformer training jobs."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to transformer engineering",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Optimization as systems policy",
+            "sections": [
+              {
+                "label": "Engineering relevance",
+                "body": "Mixed precision, gradient accumulation, checkpointing, and distributed synchronization all interact with optimization stability."
+              },
+              {
+                "label": "Transformer relevance",
+                "body": "Large production models depend on carefully tuned optimization pipelines, not just good model code."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Optimization is part of the architecture story because it determines whether scaling is feasible."
+              }
             ]
           }
         ]
@@ -242,119 +1220,611 @@ const starterModules = [
     ]
   },
   {
-    slug: 'foundations-of-transformer-architecture',
-    title: 'Foundations of Transformer Architecture',
-    description: 'A structural module explaining the internal components of transformer systems, including attention blocks, feed-forward layers, residual connections, normalization, and multi-head mechanisms.',
-    icon: 'book-open',
-    sort_order: 3,
-    topics: [
+    "slug": "foundations-of-transformer-architecture",
+    "title": "Foundations of Transformer Architecture",
+    "description": "A structural module explaining the internal components of transformer systems, including attention blocks, feed-forward layers, residual connections, normalization, and multi-head mechanisms.",
+    "icon": "book-open",
+    "sort_order": 3,
+    "topics": [
       {
-        topic_title: 'Query, key, and value roles',
-        sort_order: 1,
-        summary: 'Break down the projections that let each token ask for and receive context.',
-        cards: [
+        "topic_title": "Query, key, and value roles",
+        "sort_order": 1,
+        "summary": "Understand the three projections that turn token representations into searchable context.",
+        "cards": [
           {
-            title: 'Three projections, three jobs',
-            card_type: 'concept',
-            subtopic_title: 'Q, K, and V',
-            sections: [
-              { label: 'Short explanation', body: 'Each token embedding is projected into a query, key, and value vector. Queries express what information the token is seeking, keys describe what each token offers, and values store the content that can be retrieved.' },
-              { label: 'Formula', body: 'Q = XW_Q, K = XW_K, V = XW_V.' },
-              { label: 'Key takeaway', body: 'The same sequence is viewed through three learned lenses to support content-based retrieval.' }
+            "title": "Definition: query, key, and value",
+            "card_type": "definition",
+            "subtopic_title": "Three roles inside attention",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "For token matrix $X$, attention constructs $$Q = XW_Q, \\qquad K = XW_K, \\qquad V = XW_V.$$ Queries ask what information is needed, keys describe what information is available, and values carry the content to be mixed."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Separating search from retrieval gives the model flexibility in how it scores and stores information."
+              },
+              {
+                "label": "Takeaway",
+                "body": "These are not arbitrary letters; they define distinct jobs in the attention pipeline."
+              }
             ]
           },
           {
-            title: 'How a token chooses context',
-            card_type: 'intuition',
-            subtopic_title: 'Compatibility scores',
-            sections: [
-              { label: 'Short explanation', body: 'A token compares its query to every key. Stronger similarity produces a larger attention score and more influence from that token’s value.' },
-              { label: 'Example', body: 'A pronoun token may strongly attend to a noun token whose key matches the pronoun’s query for referential context.' },
-              { label: 'Visual description', body: 'Picture one row of the attention matrix lighting up around the tokens most relevant to the current token.' }
+            "title": "Intuition: ask, advertise, deliver",
+            "card_type": "intuition",
+            "subtopic_title": "A simple mental model for QKV",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "A query is like a request, a key is like metadata attached to a memory item, and a value is the content stored behind that item."
+              },
+              {
+                "label": "Interpretation",
+                "body": "The model first asks “which memories are relevant?” and only then blends the corresponding value content."
+              },
+              {
+                "label": "Takeaway",
+                "body": "This split is one reason attention can be expressive without being hand-designed."
+              }
             ]
           },
           {
-            title: 'Why values are separate',
-            card_type: 'comparison',
-            subtopic_title: 'Retrieve versus score',
-            sections: [
-              { label: 'Short explanation', body: 'Scoring and retrieval are different jobs. Keys help rank relevance, while values carry the information that gets mixed into the output.' },
-              { label: 'Pitfalls', body: 'If keys and values were forced to be the same representation, the model would have less flexibility in how it stores versus matches information.' },
-              { label: 'Connection to the broader problem', body: 'Separating these roles is one reason attention is expressive enough to support complex reasoning patterns.' }
+            "title": "Why separating scoring from content matters",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Architectural flexibility",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "If the same representation had to both match and store content, the model would face unnecessary constraints."
+              },
+              {
+                "label": "Benefit",
+                "body": "Keys can specialize for ranking while values specialize for carrying information useful after retrieval."
+              },
+              {
+                "label": "Relevance",
+                "body": "This separation improves the expressive capacity of transformer layers."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of token-level scores",
+            "card_type": "math",
+            "subtopic_title": "Compatibility between a query and all keys",
+            "sections": [
+              {
+                "label": "Formula",
+                "body": "For token $i$ attending to token $j$, the raw compatibility is $$s_{ij} = \frac{q_i^\top k_j}{\\sqrt{d_k}}.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "The score says how well token $j$ matches what token $i$ is currently searching for."
+              },
+              {
+                "label": "Why it matters",
+                "body": "These scores determine the routing pattern of context flow."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of a single attention row",
+            "card_type": "derivation",
+            "subtopic_title": "How one token builds its update",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Project token $i$ to query $q_i$ and every token $j$ to key-value pair $(k_j, v_j)$."
+              },
+              {
+                "label": "Step 2",
+                "body": "Compute all compatibilities $s_{ij}$ against the keys."
+              },
+              {
+                "label": "Step 3",
+                "body": "Normalize them into weights $\\alpha_{ij}$ via softmax."
+              },
+              {
+                "label": "Step 4",
+                "body": "Blend values into $$o_i = \\sum_j \\alpha_{ij} v_j.$$"
+              }
+            ]
+          },
+          {
+            "title": "Worked example: resolving a reference token",
+            "card_type": "worked-example",
+            "subtopic_title": "How QKV roles appear in language",
+            "sections": [
+              {
+                "label": "Example",
+                "body": "A pronoun token forms a query whose direction is useful for finding its antecedent. Noun tokens expose keys that make them likely matches if they contain the needed grammatical and semantic cues."
+              },
+              {
+                "label": "Outcome",
+                "body": "The corresponding values contribute the retrieved contextual content for the pronoun’s updated representation."
+              },
+              {
+                "label": "Takeaway",
+                "body": "QKV is a concrete way to operationalize context lookup."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: attention heads with specialized roles",
+            "card_type": "research-connection",
+            "subtopic_title": "Functional specialization inside QKV spaces",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Interpretability papers often describe heads that focus on name movement, bracket matching, delimiter tracking, or copying. These behaviors arise because the learned query-key geometry specializes."
+              },
+              {
+                "label": "Why this matters",
+                "body": "QKV projections are not generic bookkeeping; they create distinct search spaces with functional structure."
+              },
+              {
+                "label": "Reading guide",
+                "body": "When reading these papers, ask what evidence shows a head is causally important rather than merely correlated."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in QKV explanations",
+            "card_type": "pitfall",
+            "subtopic_title": "Avoiding cartoon-level understanding",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "Queries are not literal natural-language questions; they are learned vectors optimized for task loss."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "A token can use many weak keys together rather than relying on one perfect match."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Values can contain transformed information, not merely copies of input embeddings."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of QKV flow",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "From token matrix to attention map",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "Imagine one matrix $X$ being split into three views: the query view for asking, the key view for ranking, and the value view for retrieving."
+              },
+              {
+                "label": "Interpretation",
+                "body": "The attention map is generated by Q–K interactions, while the final content comes from V."
+              },
+              {
+                "label": "Relevance",
+                "body": "This is the core architectural decomposition behind self-attention."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to transformer models and systems",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Projection design in real architectures",
+            "sections": [
+              {
+                "label": "Transformer relevance",
+                "body": "Modern variants change QKV parameterization with grouped-query attention, multi-query attention, rotary position handling, and specialized projection sharing."
+              },
+              {
+                "label": "Engineering relevance",
+                "body": "These changes often reduce memory traffic and improve inference speed while preserving attention quality."
+              },
+              {
+                "label": "Takeaway",
+                "body": "QKV design remains an active optimization target in large-model systems."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Multi-head attention and feed-forward blocks',
-        sort_order: 2,
-        summary: 'See how a transformer learns several kinds of relationships at once, then refines them with per-token computation.',
-        cards: [
+        "topic_title": "Multi-head attention and feed-forward blocks",
+        "sort_order": 2,
+        "summary": "See how transformers alternate between cross-token mixing and per-token transformation.",
+        "cards": [
           {
-            title: 'Why multiple heads exist',
-            card_type: 'concept',
-            subtopic_title: 'Parallel relationship detectors',
-            sections: [
-              { label: 'Short explanation', body: 'Instead of learning one attention pattern, transformers split the model dimension across several heads. Each head can specialize in different relationships.' },
-              { label: 'Example', body: 'One head may track syntax, another may align entities, and another may capture positional or long-range context.' },
-              { label: 'Key takeaway', body: 'Multi-head attention increases representational diversity without abandoning efficient matrix operations.' }
+            "title": "Definition: multi-head attention",
+            "card_type": "definition",
+            "subtopic_title": "Several attention views in parallel",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Multi-head attention splits the model dimension into several subspaces, runs attention in each head, concatenates the outputs, and projects them back. For head $h$, $$\\operatorname{head}_h = \\operatorname{Attn}(Q_h, K_h, V_h).$$"
+              },
+              {
+                "label": "Why it matters",
+                "body": "Different heads can focus on different patterns or relationships."
+              },
+              {
+                "label": "Takeaway",
+                "body": "A transformer layer does not rely on one single notion of relevance."
+              }
             ]
           },
           {
-            title: 'Feed-forward layers after attention',
-            card_type: 'concept',
-            subtopic_title: 'Per-token refinement',
-            sections: [
-              { label: 'Short explanation', body: 'After attention mixes information across tokens, a position-wise feed-forward network transforms each token representation independently.' },
-              { label: 'Formula', body: 'FFN(x) = W_2 σ(W_1 x + b_1) + b_2.' },
-              { label: 'Intuition', body: 'Attention shares information across tokens; the feed-forward block then deepens the local representation of each token.' }
+            "title": "Intuition: multiple specialists",
+            "card_type": "intuition",
+            "subtopic_title": "Why several heads are useful",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "One head can track local syntax, another entity references, another separators, and another long-range topic cues."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Parallel heads let the model inspect the same sequence through multiple learned relationship detectors."
+              },
+              {
+                "label": "Takeaway",
+                "body": "This increases expressive capacity without breaking the regular tensor structure of the model."
+              }
             ]
           },
           {
-            title: 'Putting heads back together',
-            card_type: 'synthesis',
-            subtopic_title: 'Concatenate and project',
-            sections: [
-              { label: 'Short explanation', body: 'Outputs from all heads are concatenated and linearly projected back into the model dimension, allowing the layer to combine multiple contextual views.' },
-              { label: 'Connection to the broader problem', body: 'This “mix, then refine” pattern is repeated many times across the network and is central to transformer depth.' },
-              { label: 'Key takeaway', body: 'The architecture alternates between cross-token interaction and per-token computation.' }
+            "title": "Why feed-forward blocks matter after attention",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Per-token nonlinear refinement",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "Attention mixes information across positions, but it is the feed-forward network (FFN) that applies a rich nonlinear transformation at each position."
+              },
+              {
+                "label": "Formula",
+                "body": "A typical block uses $$\\operatorname{FFN}(x) = W_2\\,\\sigma(W_1x + b_1) + b_2.$$"
+              },
+              {
+                "label": "Relevance",
+                "body": "Transformers alternate between communication and computation."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of multi-head recombination",
+            "card_type": "math",
+            "subtopic_title": "Concatenate and project",
+            "sections": [
+              {
+                "label": "Formula",
+                "body": "If there are $H$ heads, the layer output is $$\\operatorname{MHA}(X) = \\operatorname{Concat}(\\operatorname{head}_1, \\ldots, \\operatorname{head}_H)W_O.$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "The output projection $W_O$ remixes all head outputs into the model dimension."
+              },
+              {
+                "label": "Why it matters",
+                "body": "The model can learn to combine diverse contextual views into one coherent representation."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of one transformer block",
+            "card_type": "derivation",
+            "subtopic_title": "Mixing then refining",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "Project inputs into Q, K, and V for each head and compute head-specific attention outputs."
+              },
+              {
+                "label": "Step 2",
+                "body": "Concatenate those outputs and project them back through $W_O$."
+              },
+              {
+                "label": "Step 3",
+                "body": "Pass the result through residual and normalization scaffolding."
+              },
+              {
+                "label": "Step 4",
+                "body": "Apply the FFN independently to each token position."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: several heads, different patterns",
+            "card_type": "worked-example",
+            "subtopic_title": "Parallel structure discovery",
+            "sections": [
+              {
+                "label": "Scenario",
+                "body": "In a sentence with nested clauses, one head may attend to punctuation boundaries while another tracks subject-verb agreement and another tracks coreference."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Their outputs are not isolated forever; the output projection and later layers can combine them."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Heads create a set of complementary contextual summaries."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: induction and specialization across heads",
+            "card_type": "research-connection",
+            "subtopic_title": "What head studies have found",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Empirical work shows that some heads become highly interpretable while others appear redundant or diffuse. Later layers may rely on a small subset of especially important heads."
+              },
+              {
+                "label": "Why this matters",
+                "body": "These findings motivate head pruning, grouped-query variants, and efficiency-focused redesigns."
+              },
+              {
+                "label": "Reading guide",
+                "body": "Ask whether a paper measures head usefulness by ablation, attention maps, or downstream transfer."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls about heads and FFNs",
+            "card_type": "pitfall",
+            "subtopic_title": "Avoiding incomplete architectural stories",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "It is wrong to think only attention matters; FFNs contribute a large fraction of model capacity."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "More heads do not automatically mean better performance if each head becomes too small or redundant."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Head visualizations show routing patterns, not the full nonlinear transformation performed by the layer."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of a block",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "Alternating global and local computation",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "A transformer block can be pictured as two phases: first a cross-token communication phase (attention), then a per-token processing phase (FFN)."
+              },
+              {
+                "label": "Interpretation",
+                "body": "This alternation is repeated many times, gradually refining each token with broader context."
+              },
+              {
+                "label": "Relevance",
+                "body": "It is a helpful mental model for understanding why deep transformer stacks are powerful."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to modern transformer systems",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Architectural tuning in practice",
+            "sections": [
+              {
+                "label": "Transformer relevance",
+                "body": "Modern models experiment with SwiGLU FFNs, grouped-query attention, sparse heads, and mixture-of-experts routing to improve quality-per-compute."
+              },
+              {
+                "label": "Engineering relevance",
+                "body": "These choices affect throughput, memory, and inference latency."
+              },
+              {
+                "label": "Takeaway",
+                "body": "The block structure remains stable, but its internal parameterization is an active area of innovation."
+              }
             ]
           }
         ]
       },
       {
-        topic_title: 'Residuals, normalization, and model families',
-        sort_order: 3,
-        summary: 'Understand the scaffold that keeps transformer stacks trainable and how encoder/decoder variants differ.',
-        cards: [
+        "topic_title": "Residuals, normalization, and model families",
+        "sort_order": 3,
+        "summary": "Learn the scaffold that keeps transformer stacks trainable and how major architecture families differ.",
+        "cards": [
           {
-            title: 'Residual connections preserve pathways',
-            card_type: 'concept',
-            subtopic_title: 'Skip connections',
-            sections: [
-              { label: 'Short explanation', body: 'A residual connection adds a block’s input back to its output. This helps information and gradients move through deep stacks.' },
-              { label: 'Formula', body: 'y = x + F(x).' },
-              { label: 'Intuition', body: 'Each block learns a correction to the current representation rather than rebuilding it from scratch.' }
+            "title": "Definition: residual pathways and normalization",
+            "card_type": "definition",
+            "subtopic_title": "The stabilizing scaffold of deep transformers",
+            "sections": [
+              {
+                "label": "Definition",
+                "body": "Residual connections add a block input back to its transformed output, typically as $$y = x + F(x).$$ Normalization rescales activations so training remains stable."
+              },
+              {
+                "label": "Why it matters",
+                "body": "Without this scaffold, deep attention stacks are much harder to optimize."
+              },
+              {
+                "label": "Takeaway",
+                "body": "These components are structural necessities, not cosmetic extras."
+              }
             ]
           },
           {
-            title: 'Layer normalization steadies activations',
-            card_type: 'concept',
-            subtopic_title: 'Stable scale',
-            sections: [
-              { label: 'Short explanation', body: 'Layer normalization rescales features within a token representation so activations stay in a more controlled range.' },
-              { label: 'Pitfalls', body: 'Without good normalization strategy, deeper models are harder to optimize and more sensitive to initialization.' },
-              { label: 'Key takeaway', body: 'Normalization and residual design are as important as attention itself for practical training.' }
+            "title": "Intuition: preserve a safe default path",
+            "card_type": "intuition",
+            "subtopic_title": "Why skip connections help",
+            "sections": [
+              {
+                "label": "Intuition",
+                "body": "A residual pathway lets each block start from “keep the current representation” and then learn only the useful correction."
+              },
+              {
+                "label": "Interpretation",
+                "body": "This prevents every layer from having to relearn the entire representation from scratch."
+              },
+              {
+                "label": "Takeaway",
+                "body": "Residual structure supports both information preservation and gradient flow."
+              }
             ]
           },
           {
-            title: 'Encoder-only, decoder-only, and encoder-decoder',
-            card_type: 'comparison',
-            subtopic_title: 'Architectural families',
-            sections: [
-              { label: 'Short explanation', body: 'Encoder-only models excel at representation and classification, decoder-only models specialize in autoregressive generation, and encoder-decoder models map one sequence into another.' },
-              { label: 'Example', body: 'BERT is encoder-only, GPT-style models are decoder-only, and T5-style systems use an encoder-decoder design.' },
-              { label: 'Connection to the broader problem', body: 'These families share the same transformer building blocks but arrange masking and information flow differently for different tasks.' }
+            "title": "Why normalization matters for deep stacks",
+            "card_type": "why-it-matters",
+            "subtopic_title": "Keeping activations in a trainable range",
+            "sections": [
+              {
+                "label": "Core point",
+                "body": "Layer normalization reduces sensitivity to scale drift across features, improving optimization stability."
+              },
+              {
+                "label": "Formula",
+                "body": "For token vector $x$, layer norm computes $$\\operatorname{LN}(x) = \\gamma \\odot \frac{x - \\mu}{\\sqrt{\\sigma^2 + \\epsilon}} + \beta.$$"
+              },
+              {
+                "label": "Relevance",
+                "body": "Modern transformers rely on consistent normalization strategy to scale depth."
+              }
+            ]
+          },
+          {
+            "title": "Mathematical formulation of pre-norm and post-norm",
+            "card_type": "math",
+            "subtopic_title": "Ordering changes optimization behavior",
+            "sections": [
+              {
+                "label": "Post-norm form",
+                "body": "$$y = \\operatorname{LN}(x + F(x)).$$"
+              },
+              {
+                "label": "Pre-norm form",
+                "body": "$$y = x + F(\\operatorname{LN}(x)).$$"
+              },
+              {
+                "label": "Interpretation",
+                "body": "Pre-norm often improves gradient stability in very deep transformers because the residual stream remains more direct."
+              }
+            ]
+          },
+          {
+            "title": "Step-by-step derivation of residual gradient intuition",
+            "card_type": "derivation",
+            "subtopic_title": "Why deep stacks remain trainable",
+            "sections": [
+              {
+                "label": "Step 1",
+                "body": "For $y = x + F(x)$, the Jacobian includes an identity term $I$ plus the derivative of $F$."
+              },
+              {
+                "label": "Step 2",
+                "body": "Even if $\\partial F/\\partial x$ is poorly conditioned, the identity contribution preserves a direct route for information and gradient flow."
+              },
+              {
+                "label": "Step 3",
+                "body": "Normalization further reduces variance drift, making deep composition more manageable."
+              },
+              {
+                "label": "Conclusion",
+                "body": "Residual plus normalization is a stability recipe for deep transformer layers."
+              }
+            ]
+          },
+          {
+            "title": "Worked example: architecture family differences",
+            "card_type": "worked-example",
+            "subtopic_title": "Encoder-only, decoder-only, encoder-decoder",
+            "sections": [
+              {
+                "label": "Encoder-only",
+                "body": "Models like BERT use bidirectional attention to build rich representations useful for classification and retrieval."
+              },
+              {
+                "label": "Decoder-only",
+                "body": "GPT-style models use causal masking so each token predicts the next from left context."
+              },
+              {
+                "label": "Encoder-decoder",
+                "body": "T5-style systems use an encoder for source understanding and a decoder for autoregressive generation conditioned on encoder outputs."
+              }
+            ]
+          },
+          {
+            "title": "Research connection: normalization design and architecture families",
+            "card_type": "research-connection",
+            "subtopic_title": "How architecture choices evolve",
+            "sections": [
+              {
+                "label": "Paper description",
+                "body": "Research on deep transformer stability studies pre-norm versus post-norm, residual scaling, RMSNorm, and architecture-specific masking patterns."
+              },
+              {
+                "label": "Why this matters",
+                "body": "These choices affect whether large models can be trained efficiently and which tasks they are best suited for."
+              },
+              {
+                "label": "Reading guide",
+                "body": "When reading architecture papers, track the norm placement, mask type, and data objective."
+              }
+            ]
+          },
+          {
+            "title": "Common pitfalls in architecture-family comparisons",
+            "card_type": "pitfall",
+            "subtopic_title": "Avoiding oversimplified taxonomy",
+            "sections": [
+              {
+                "label": "Pitfall 1",
+                "body": "Encoder-only does not mean “better understanding” in an absolute sense; it means the objective and masking differ."
+              },
+              {
+                "label": "Pitfall 2",
+                "body": "Decoder-only models still learn strong representations even though they are trained for next-token prediction."
+              },
+              {
+                "label": "Pitfall 3",
+                "body": "Normalization strategy and residual scaling can materially change behavior even within the same family."
+              }
+            ]
+          },
+          {
+            "title": "Visual interpretation of the residual stream",
+            "card_type": "visual-interpretation",
+            "subtopic_title": "A running highway through the model",
+            "sections": [
+              {
+                "label": "Picture",
+                "body": "The residual stream is like a highway carrying token information through the network, while attention and FFN blocks act as on-ramps that add corrections."
+              },
+              {
+                "label": "Interpretation",
+                "body": "Normalization keeps traffic conditions stable so later layers still receive usable signals."
+              },
+              {
+                "label": "Relevance",
+                "body": "This mental model helps explain why the stack can be both deep and trainable."
+              }
+            ]
+          },
+          {
+            "title": "Relevance to modern transformer and ML systems",
+            "card_type": "ml-relevance",
+            "subtopic_title": "Scaffold decisions shape deployment",
+            "sections": [
+              {
+                "label": "Transformer relevance",
+                "body": "Residual and normalization design affect fine-tuning stability, quantization behavior, long-context scaling, and inference throughput."
+              },
+              {
+                "label": "Systems relevance",
+                "body": "Architecture families also determine which serving patterns are natural: retrieval and classification for encoder stacks, open-ended generation for decoder stacks, and translation or summarization for encoder-decoder systems."
+              },
+              {
+                "label": "Takeaway",
+                "body": "The scaffold of a transformer determines both what it can learn and how it can be deployed."
+              }
             ]
           }
         ]
