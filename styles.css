@@ -680,8 +680,15 @@ code {
   color: var(--primary);
 }
 
+.badge.success,
 .pill.success { background: var(--success-soft); color: var(--success); }
+.badge.warning,
 .pill.warning { background: var(--warning-soft); color: var(--warning); }
+.badge.error,
+.pill.error {
+  background: var(--error-soft);
+  color: var(--error);
+}
 
 .active-user-badge {
   display: inline-grid;
@@ -1743,11 +1750,6 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.pill.error {
-  background: var(--error-soft);
-  color: var(--error);
 }
 
 @media (max-width: 1100px) {

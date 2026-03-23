@@ -85,6 +85,16 @@ const state = {
   learningModules: [],
   learningModulesLoading: false,
   learningModulesError: '',
+  learningModulesStatus: {
+    source: 'supabase',
+    persistenceAvailable: true,
+    setupRequired: false,
+    statusBadge: 'Supabase synced',
+    statusTone: 'success',
+    statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+    fallbackDetail: '',
+    errorMessage: ''
+  },
   expandedLearningModules: new Set(),
   expandedLearningModuleUsers: new Set(),
   moduleConnectionIds: new Set(),
@@ -1007,14 +1017,77 @@ function renderDataControlsSection() {
   ].join('');
 }
 
+function getLearningModulesStatus() {
+  return state.learningModulesStatus || {
+    source: 'supabase',
+    persistenceAvailable: true,
+    setupRequired: false,
+    statusBadge: 'Supabase synced',
+    statusTone: 'success',
+    statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+    fallbackDetail: '',
+    errorMessage: ''
+  };
+}
+
+function renderLearningModulesStatus() {
+  const status = getLearningModulesStatus();
+
+  if (els.learningModulesStatusBadge) {
+    els.learningModulesStatusBadge.textContent = status.statusBadge || 'Supabase synced';
+    els.learningModulesStatusBadge.className = `badge ${status.statusTone === 'success' ? 'success' : status.statusTone === 'error' ? 'error' : 'warning'}`;
+  }
+
+  if (els.learningModulesStatusCallout) {
+    const tone = status.persistenceAvailable ? 'subtle' : status.setupRequired ? 'info' : 'subtle';
+    const actionCopy = status.persistenceAvailable
+      ? 'Connecting a module requires sign-in and only exposes safe public-facing user identity details.'
+      : status.setupRequired
+        ? 'Apply the Learning Modules migration to enable Supabase syncing, topic seeding, and saved connections.'
+        : 'You can still browse all starter modules now, but saved connections stay disabled until Supabase is reachable again.';
+
+    els.learningModulesStatusCallout.className = `callout ${tone}`;
+    els.learningModulesStatusCallout.innerHTML = `
+      <strong>${escapeHtml(status.statusMessage || 'Learning Modules are available.')}</strong>
+      <div class="small-text">${escapeHtml(status.fallbackDetail || actionCopy)}</div>
+      ${status.fallbackDetail ? `<div class="small-text">${escapeHtml(actionCopy)}</div>` : ''}
+    `;
+  }
+}
+
+function isLearningModuleSetupError(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes('learning_module_connections') && (normalized.includes('schema cache') || normalized.includes('does not exist'));
+}
+
+function setLearningModulesFallbackStatus({ setupRequired = false, message = '', detail = '' } = {}) {
+  state.learningModulesStatus = {
+    source: 'fallback',
+    persistenceAvailable: false,
+    setupRequired,
+    statusBadge: setupRequired ? 'Setup required' : 'Fallback data',
+    statusTone: 'warning',
+    statusMessage: message || (setupRequired
+      ? 'Starter modules are shown from built-in fallback data until the Learning Modules migration is applied.'
+      : 'Starter modules are shown from built-in fallback data while Supabase sync is unavailable.'),
+    fallbackDetail: detail || (setupRequired
+      ? 'Learning Modules persistence is unavailable because one or more Supabase tables or functions are missing.'
+      : 'Supabase is temporarily unavailable, so the workspace is using starter module data bundled with the app.'),
+    errorMessage: ''
+  };
+}
+
 function renderLearningModuleUsers(module) {
-  const isUsersOpen = state.expandedLearningModuleUsers.has(module.slug);
+  const status = getLearningModulesStatus();
+  const isUsersOpen = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug);
   const isUsersLoading = state.learningModuleUsersLoading.has(module.slug);
   const usersError = state.learningModuleUsersErrors.get(module.slug) || '';
   const connectedUsers = state.learningModuleUsersBySlug.get(module.slug) || [];
 
   let content = '<div class="empty-state">Expand this area to view connected users.</div>';
-  if (isUsersOpen && isUsersLoading) {
+  if (!status.persistenceAvailable) {
+    content = '<div class="empty-state">Connected-user lists will appear after Supabase syncing is available.</div>';
+  } else if (isUsersOpen && isUsersLoading) {
     content = '<div class="empty-state">Loading connected users…</div>';
   } else if (isUsersOpen && usersError) {
     content = `<div class="empty-state">${escapeHtml(usersError)}</div>`;
@@ -1039,7 +1112,7 @@ function renderLearningModuleUsers(module) {
   }
 
   return `
-    <div class="learning-module-collapsible ${isUsersOpen ? 'is-open' : ''}">
+    <div class="learning-module-collapsible ${isUsersOpen || !status.persistenceAvailable ? 'is-open' : ''}">
       <div class="learning-module-collapsible-inner">
         <div class="learning-module-section-block learning-module-users-panel stack-sm">
           <div class="section-heading compact">
@@ -1047,7 +1120,7 @@ function renderLearningModuleUsers(module) {
               <h3>Connected users</h3>
               <p class="muted small-text">Only safe public-facing identity details are shown here.</p>
             </div>
-            <span class="pill ${connectedUsers.length ? 'success' : ''}">${escapeHtml(String(connectedUsers.length))} connected</span>
+            <span class="pill ${status.persistenceAvailable && connectedUsers.length ? 'success' : status.persistenceAvailable ? '' : 'warning'}">${escapeHtml(status.persistenceAvailable ? `${connectedUsers.length} connected` : 'Sync unavailable')}</span>
           </div>
           ${content}
         </div>
@@ -1060,6 +1133,9 @@ function renderLearningModulesSection() {
   if (!isDesktopWorkspace || !els.learningModulesList) {
     return;
   }
+
+  renderLearningModulesStatus();
+  const status = getLearningModulesStatus();
 
   if (state.learningModulesLoading && !state.learningModules.length) {
     els.learningModulesList.innerHTML = '<div class="empty-state">Loading learning modules…</div>';
@@ -1078,12 +1154,18 @@ function renderLearningModulesSection() {
 
   els.learningModulesList.innerHTML = state.learningModules.map((module) => {
     const isExpanded = state.expandedLearningModules.has(module.id);
-    const isConnected = state.moduleConnectionIds.has(module.id);
-    const isConnecting = state.pendingModuleConnectionIds.has(module.id);
+    const isConnected = status.persistenceAvailable && state.moduleConnectionIds.has(module.id);
+    const isConnecting = status.persistenceAvailable && state.pendingModuleConnectionIds.has(module.id);
     const topics = Array.isArray(module.topics) ? module.topics : [];
-    const userToggleLabel = state.expandedLearningModuleUsers.has(module.slug)
+    const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
       ? 'Hide all users connected'
       : 'Show all users connected';
+    const canConnect = status.persistenceAvailable && Boolean(state.user);
+    const helperText = !status.persistenceAvailable
+      ? 'Connect Me becomes available automatically after Supabase syncing is ready.'
+      : !state.user
+        ? 'Sign in to connect yourself to a module. Browsing modules remains available while signed out.'
+        : 'Connect yourself to save this module to your Supabase-backed workspace.';
 
     return `
       <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}">
@@ -1099,6 +1181,7 @@ function renderLearningModulesSection() {
               <div class="learning-module-heading-row">
                 <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
                 ${isConnected ? '<span class="pill success">Connected</span>' : ''}
+                ${!status.persistenceAvailable ? '<span class="pill warning">Fallback</span>' : ''}
               </div>
               <div>
                 <h3>${escapeHtml(module.title)}</h3>
@@ -1115,7 +1198,8 @@ function renderLearningModulesSection() {
               data-action="connect-module"
               data-module-id="${escapeHtml(module.id)}"
               data-module-slug="${escapeHtml(module.slug)}"
-              ${isConnecting || isConnected ? 'disabled' : ''}
+              ${!canConnect || isConnecting || isConnected ? 'disabled' : ''}
+              title="${escapeHtml(status.persistenceAvailable ? (state.user ? 'Save this learning module to your profile.' : 'Sign in to save this learning module.') : 'Supabase syncing is required before connections can be saved.')}"
             >
               <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
               <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : 'Connect Me'}</span>
@@ -1125,12 +1209,14 @@ function renderLearningModulesSection() {
               class="secondary small"
               data-action="toggle-users"
               data-module-slug="${escapeHtml(module.slug)}"
+              ${!status.persistenceAvailable ? 'disabled' : ''}
+              title="${escapeHtml(status.persistenceAvailable ? 'View everyone who connected to this module.' : 'Connected-user lists require Supabase syncing.')}"
             >
               ${escapeHtml(userToggleLabel)}
             </button>
           </div>
 
-          ${!state.user ? '<p class="muted small-text">Sign in to connect yourself to a module. Browsing modules remains available while signed out.</p>' : ''}
+          <p class="muted small-text">${escapeHtml(helperText)}</p>
 
           <div class="learning-module-collapsible ${isExpanded ? 'is-open' : ''}">
             <div class="learning-module-collapsible-inner">
@@ -1165,18 +1251,45 @@ async function loadLearningModules({ force = false } = {}) {
   renderLearningModulesSection();
 
   try {
-    const [modules, currentUserConnections] = await Promise.all([
-      !force && state.learningModules.length ? Promise.resolve(state.learningModules) : fetchLearningModules(),
-      state.user ? fetchLearningModuleConnectionsForCurrentUser() : Promise.resolve([])
-    ]);
+    const modulePayload = (!force && state.learningModules.length)
+      ? { modules: state.learningModules, ...getLearningModulesStatus() }
+      : await fetchLearningModules();
 
-    state.learningModules = modules || [];
-    state.moduleConnectionIds = new Set((currentUserConnections || []).map((connection) => connection.module_id));
+    state.learningModules = modulePayload?.modules || [];
+    state.learningModulesStatus = {
+      ...getLearningModulesStatus(),
+      ...(modulePayload || {})
+    };
+
+    if (state.user && state.learningModulesStatus.persistenceAvailable) {
+      try {
+        const currentUserConnections = await fetchLearningModuleConnectionsForCurrentUser();
+        state.moduleConnectionIds = new Set((currentUserConnections || []).map((connection) => connection.module_id));
+      } catch (error) {
+        state.moduleConnectionIds = new Set();
+        state.pendingModuleConnectionIds = new Set();
+        setLearningModulesFallbackStatus({
+          setupRequired: isLearningModuleSetupError(error?.message),
+          message: 'Starter modules are still available, but saved connections are temporarily disabled.',
+          detail: isLearningModuleSetupError(error?.message)
+            ? 'The learning-module connection table or related Supabase function is missing. Apply the migration to enable persistence.'
+            : 'Supabase could not load your saved module connections right now. Browsing starter modules still works.'
+        });
+      }
+    } else {
+      state.moduleConnectionIds = new Set();
+      state.pendingModuleConnectionIds = new Set();
+    }
   } catch (error) {
-    state.learningModulesError = error.message || 'Unable to load learning modules right now.';
+    state.learningModulesError = 'Starter learning modules could not be loaded right now.';
+    state.learningModules = [];
+    setLearningModulesFallbackStatus({
+      setupRequired: isLearningModuleSetupError(error?.message),
+      detail: 'The workspace could not initialize Learning Modules. Reload after applying the Supabase migration if the issue persists.'
+    });
   } finally {
     state.learningModulesLoading = false;
-    if (!state.user) {
+    if (!state.user || !state.learningModulesStatus.persistenceAvailable) {
       state.moduleConnectionIds = new Set();
       state.pendingModuleConnectionIds = new Set();
     }
@@ -1185,7 +1298,7 @@ async function loadLearningModules({ force = false } = {}) {
 }
 
 async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
-  if (!moduleSlug) {
+  if (!moduleSlug || !getLearningModulesStatus().persistenceAvailable) {
     return;
   }
 
@@ -1211,6 +1324,11 @@ async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
 
 async function handleLearningModuleConnect(moduleId, moduleSlug) {
   if (!moduleId) {
+    return;
+  }
+
+  if (!getLearningModulesStatus().persistenceAvailable) {
+    setStatus('Learning Modules are currently in fallback mode. Apply the Supabase migration or restore connectivity to enable saved connections.', 'error');
     return;
   }
 
@@ -2058,7 +2176,8 @@ function bindElements() {
     'supabaseTablesOverview', 'supabaseStorageOverview', 'supabaseAuthSummary', 'supabaseEnvStatus', 'dataControlsForm',
     'dataPresenceSharingEnabled', 'dataInvisibleModeEnabled', 'dataTrackingEnabled', 'dataHistoryMode', 'dataRetentionSelect',
     'dataControlsValidationMessage', 'dataPresenceSummary', 'dataConsentSummary', 'dataProfileSummary', 'dataRetentionSummary',
-    'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls', 'learningModulesList'
+    'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls', 'learningModulesList',
+    'learningModulesStatusBadge', 'learningModulesStatusCallout'
   ].forEach((id) => {
     els[id] = $(id);
   });

@@ -29,6 +29,97 @@ export const PROFILE_VISIBILITY_FIELDS = Object.freeze({
   share_bio: true
 });
 
+export const LEARNING_MODULE_FALLBACK_DATA = Object.freeze([
+  {
+    id: 'fallback-foundations-of-transformers',
+    slug: 'foundations-of-transformers',
+    title: 'Foundations of Transformers',
+    description: 'An introductory module covering the core ideas behind transformers, including sequence modeling, attention, tokens, embeddings, and why transformers became central to modern AI.',
+    icon: 'book-open',
+    sort_order: 1,
+    topics: [
+      { id: 'fallback-foundations-of-transformers-topic-1', topic_title: 'What problems transformers solve', sort_order: 1 },
+      { id: 'fallback-foundations-of-transformers-topic-2', topic_title: 'Tokens and tokenization', sort_order: 2 },
+      { id: 'fallback-foundations-of-transformers-topic-3', topic_title: 'Embeddings and representation', sort_order: 3 },
+      { id: 'fallback-foundations-of-transformers-topic-4', topic_title: 'Self-attention basics', sort_order: 4 },
+      { id: 'fallback-foundations-of-transformers-topic-5', topic_title: 'Why transformers outperform older sequence models', sort_order: 5 },
+      { id: 'fallback-foundations-of-transformers-topic-6', topic_title: 'Overview of encoder and decoder ideas', sort_order: 6 }
+    ]
+  },
+  {
+    id: 'fallback-mathematical-foundations-of-transformers',
+    slug: 'mathematical-foundations-of-transformers',
+    title: 'Mathematical Foundations of Transformers',
+    description: 'A mathematically focused module covering the linear algebra, probability, optimization, and matrix operations that support transformer models.',
+    icon: 'book-open',
+    sort_order: 2,
+    topics: [
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-1', topic_title: 'Vectors, matrices, and tensor intuition', sort_order: 1 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-2', topic_title: 'Dot products and similarity', sort_order: 2 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-3', topic_title: 'Softmax and probability distributions', sort_order: 3 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-4', topic_title: 'Matrix multiplication in attention', sort_order: 4 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-5', topic_title: 'Gradients and backpropagation overview', sort_order: 5 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-6', topic_title: 'Optimization basics for training transformers', sort_order: 6 },
+      { id: 'fallback-mathematical-foundations-of-transformers-topic-7', topic_title: 'Positional encoding mathematics', sort_order: 7 }
+    ]
+  },
+  {
+    id: 'fallback-foundations-of-transformer-architecture',
+    slug: 'foundations-of-transformer-architecture',
+    title: 'Foundations of Transformer Architecture',
+    description: 'A structural module explaining the internal components of transformer systems, including attention blocks, feed-forward layers, residual connections, normalization, and multi-head mechanisms.',
+    icon: 'book-open',
+    sort_order: 3,
+    topics: [
+      { id: 'fallback-foundations-of-transformer-architecture-topic-1', topic_title: 'Query, key, and value roles', sort_order: 1 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-2', topic_title: 'Multi-head attention', sort_order: 2 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-3', topic_title: 'Residual connections', sort_order: 3 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-4', topic_title: 'Layer normalization', sort_order: 4 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-5', topic_title: 'Feed-forward networks', sort_order: 5 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-6', topic_title: 'Encoder-only vs decoder-only vs encoder-decoder', sort_order: 6 },
+      { id: 'fallback-foundations-of-transformer-architecture-topic-7', topic_title: 'Information flow through transformer layers', sort_order: 7 }
+    ]
+  }
+]);
+
+function cloneLearningModuleFallbackData() {
+  return LEARNING_MODULE_FALLBACK_DATA.map((module) => ({
+    ...module,
+    topics: (module.topics || []).map((topic) => ({ ...topic }))
+  }));
+}
+
+function getLearningModulesFallbackPayload({ reason = 'unavailable', error = null } = {}) {
+  const setupRequired = reason === 'missing_tables';
+  const fallbackDetail = setupRequired
+    ? 'Learning Modules tables are not available in Supabase yet. Apply the bundled migration to enable syncing and connections.'
+    : 'Supabase is temporarily unavailable, so starter modules are being shown from built-in local data.';
+
+  return {
+    modules: cloneLearningModuleFallbackData(),
+    source: 'fallback',
+    persistenceAvailable: false,
+    setupRequired,
+    statusBadge: setupRequired ? 'Setup required' : 'Fallback data',
+    statusTone: 'warning',
+    statusMessage: setupRequired
+      ? 'Starter modules are shown from built-in fallback data until the Learning Modules migration is applied.'
+      : 'Starter modules are shown from built-in fallback data while Supabase sync is unavailable.',
+    fallbackDetail,
+    errorMessage: error?.message || ''
+  };
+}
+
+function isLearningModuleTableMissingMessage(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes("could not find the table 'public.learning_modules' in the schema cache")
+    || normalized.includes("could not find the table 'public.learning_module_topics' in the schema cache")
+    || normalized.includes('relation "public.learning_modules" does not exist')
+    || normalized.includes('relation "public.learning_module_topics" does not exist')
+    || (normalized.includes('learning_modules') && normalized.includes('schema cache'))
+    || (normalized.includes('learning_module_topics') && normalized.includes('schema cache'));
+}
+
 function isExtensionContext() {
   return typeof chrome !== 'undefined' && chrome?.storage?.local;
 }
@@ -1250,26 +1341,44 @@ export async function fetchUsersOnTopSite(domain) {
 }
 
 export async function fetchLearningModules() {
-  const [modules, topics] = await Promise.all([
-    publicRestRequest('learning_modules', {
-      query: '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'
-    }),
-    publicRestRequest('learning_module_topics', {
-      query: '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc'
-    })
-  ]);
+  try {
+    const [modules, topics] = await Promise.all([
+      publicRestRequest('learning_modules', {
+        query: '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'
+      }),
+      publicRestRequest('learning_module_topics', {
+        query: '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc'
+      })
+    ]);
 
-  const topicsByModuleId = new Map();
-  (topics || []).forEach((topic) => {
-    const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
-    moduleTopics.push(topic);
-    topicsByModuleId.set(topic.module_id, moduleTopics);
-  });
+    const topicsByModuleId = new Map();
+    (topics || []).forEach((topic) => {
+      const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
+      moduleTopics.push(topic);
+      topicsByModuleId.set(topic.module_id, moduleTopics);
+    });
 
-  return (modules || []).map((module) => ({
-    ...module,
-    topics: topicsByModuleId.get(module.id) || []
-  }));
+    return {
+      modules: (modules || []).map((module) => ({
+        ...module,
+        topics: topicsByModuleId.get(module.id) || []
+      })),
+      source: 'supabase',
+      persistenceAvailable: true,
+      setupRequired: false,
+      statusBadge: 'Supabase synced',
+      statusTone: 'success',
+      statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+      fallbackDetail: '',
+      errorMessage: ''
+    };
+  } catch (error) {
+    if (isLearningModuleTableMissingMessage(error?.message)) {
+      return getLearningModulesFallbackPayload({ reason: 'missing_tables', error });
+    }
+
+    return getLearningModulesFallbackPayload({ reason: 'unavailable', error });
+  }
 }
 
 export async function fetchLearningModuleConnectionsForCurrentUser() {
