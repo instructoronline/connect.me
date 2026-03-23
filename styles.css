@@ -1337,19 +1337,40 @@ code {
 }
 
 .workspace-nav-header {
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
 .workspace-nav-toggle {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 44px;
+  width: auto;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
   gap: 10px;
   overflow: hidden;
+}
+
+.workspace-nav-shell.is-collapsed .workspace-nav-header {
+  flex-direction: column;
+  align-items: center;
+}
+
+.workspace-nav-shell.is-collapsed .workspace-nav-toggle {
+  width: 44px;
+  flex: 0 0 44px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.workspace-nav-shell.is-expanded .workspace-nav-header {
+  flex-direction: row;
+  align-items: center;
 }
 
 .workspace-nav-toggle-icon {
