@@ -24,6 +24,8 @@ const DESKTOP_WINDOW_BOUNDS = {
   width: 1280,
   height: 920
 };
+const MIN_EXTENSION_WINDOW_WIDTH = 420;
+const MIN_EXTENSION_WINDOW_HEIGHT = 700;
 
 let lastFocusedBrowserWindowId = null;
 
@@ -110,10 +112,106 @@ async function findDesktopWorkspaceTab() {
   return fallbackTab;
 }
 
-async function focusDesktopWorkspace(windowId, tabId) {
-  const updateWindow = chrome.windows.update(windowId, { focused: true, state: 'normal' });
-  const updateTab = Number.isInteger(tabId) ? chrome.tabs.update(tabId, { active: true }) : Promise.resolve(null);
-  await Promise.all([updateWindow, updateTab]);
+function getNormalizedWorkspaceBounds(windowInfo, requestedBounds = DESKTOP_WINDOW_BOUNDS) {
+  const normalizedWidth = Math.max(
+    MIN_EXTENSION_WINDOW_WIDTH,
+    windowInfo?.width || 0,
+    requestedBounds?.width || 0
+  );
+  const normalizedHeight = Math.max(
+    MIN_EXTENSION_WINDOW_HEIGHT,
+    windowInfo?.height || 0,
+    requestedBounds?.height || 0
+  );
+
+  return {
+    width: normalizedWidth,
+    height: normalizedHeight
+  };
+}
+
+function shouldForceWorkspaceReopen(windowInfo) {
+  if (!windowInfo) {
+    return false;
+  }
+
+  return Boolean(
+    windowInfo.state === 'minimized' ||
+    windowInfo.width < MIN_EXTENSION_WINDOW_WIDTH ||
+    windowInfo.height < MIN_EXTENSION_WINDOW_HEIGHT
+  );
+}
+
+async function ensureWorkspaceWindowBounds(windowInfo, tabId, requestedBounds = DESKTOP_WINDOW_BOUNDS) {
+  if (!windowInfo?.id) {
+    return null;
+  }
+
+  const normalizedBounds = getNormalizedWorkspaceBounds(windowInfo, requestedBounds);
+  const needsResize =
+    windowInfo.state !== 'normal' ||
+    windowInfo.width !== normalizedBounds.width ||
+    windowInfo.height !== normalizedBounds.height ||
+    !windowInfo.focused;
+
+  if (needsResize) {
+    await chrome.windows.update(windowInfo.id, {
+      focused: true,
+      state: 'normal',
+      width: normalizedBounds.width,
+      height: normalizedBounds.height
+    });
+  }
+
+  const refreshedWindow = await chrome.windows.get(windowInfo.id);
+  const stillTooSmall = shouldForceWorkspaceReopen(refreshedWindow);
+
+  if (!stillTooSmall) {
+    if (Number.isInteger(tabId)) {
+      await chrome.tabs.update(tabId, { active: true });
+    }
+
+    return {
+      reopened: false,
+      windowInfo: refreshedWindow
+    };
+  }
+
+  logStructured('warn', '[Connect.Me] Workspace window reopened after tiny restore', {
+    previousWindowId: windowInfo.id,
+    restoredBounds: {
+      width: refreshedWindow.width,
+      height: refreshedWindow.height,
+      state: refreshedWindow.state
+    },
+    fallbackBounds: normalizedBounds
+  });
+
+  const recreatedWindow = Number.isInteger(tabId)
+    ? await chrome.windows.create({
+        tabId,
+        type: 'popup',
+        focused: true,
+        width: normalizedBounds.width,
+        height: normalizedBounds.height
+      })
+    : await chrome.windows.create({
+        url: DESKTOP_WINDOW_URL,
+        type: 'popup',
+        focused: true,
+        width: normalizedBounds.width,
+        height: normalizedBounds.height
+      });
+
+  return {
+    reopened: true,
+    windowInfo: recreatedWindow
+  };
+}
+
+async function focusDesktopWorkspace(windowId, tabId, requestedBounds = DESKTOP_WINDOW_BOUNDS) {
+  const currentWindow = await chrome.windows.get(windowId);
+  return ensureWorkspaceWindowBounds(currentWindow, tabId, requestedBounds);
 }
 
 async function openDesktopWorkspaceWindow() {
@@ -127,19 +225,30 @@ async function openDesktopWorkspaceWindow() {
         width: DESKTOP_WINDOW_BOUNDS.width,
         height: DESKTOP_WINDOW_BOUNDS.height
       });
+      const enforcedWindow = await ensureWorkspaceWindowBounds(
+        movedWindow,
+        movedWindow?.tabs?.[0]?.id || existingWorkspace.tab.id,
+        DESKTOP_WINDOW_BOUNDS
+      );
 
       return {
         reused: true,
-        windowId: movedWindow?.id || null,
-        tabId: movedWindow?.tabs?.[0]?.id || existingWorkspace.tab.id
+        reopened: enforcedWindow?.reopened || false,
+        windowId: enforcedWindow?.windowInfo?.id || movedWindow?.id || null,
+        tabId: enforcedWindow?.windowInfo?.tabs?.[0]?.id || movedWindow?.tabs?.[0]?.id || existingWorkspace.tab.id
       };
     }
 
-    await focusDesktopWorkspace(existingWorkspace.windowInfo.id, existingWorkspace.tab?.id);
+    const enforcedWindow = await focusDesktopWorkspace(
+      existingWorkspace.windowInfo.id,
+      existingWorkspace.tab?.id,
+      DESKTOP_WINDOW_BOUNDS
+    );
     return {
       reused: true,
-      windowId: existingWorkspace.windowInfo.id,
-      tabId: existingWorkspace.tab?.id || null
+      reopened: enforcedWindow?.reopened || false,
+      windowId: enforcedWindow?.windowInfo?.id || existingWorkspace.windowInfo.id,
+      tabId: enforcedWindow?.windowInfo?.tabs?.[0]?.id || existingWorkspace.tab?.id || null
     };
   }
 
@@ -151,10 +260,17 @@ async function openDesktopWorkspaceWindow() {
     height: DESKTOP_WINDOW_BOUNDS.height
   });
 
+  const enforcedWindow = await ensureWorkspaceWindowBounds(
+    createdWindow,
+    createdWindow?.tabs?.[0]?.id || null,
+    DESKTOP_WINDOW_BOUNDS
+  );
+
   return {
     reused: false,
-    windowId: createdWindow?.id || null,
-    tabId: createdWindow?.tabs?.[0]?.id || null
+    reopened: enforcedWindow?.reopened || false,
+    windowId: enforcedWindow?.windowInfo?.id || createdWindow?.id || null,
+    tabId: enforcedWindow?.windowInfo?.tabs?.[0]?.id || createdWindow?.tabs?.[0]?.id || null
   };
 }
 
