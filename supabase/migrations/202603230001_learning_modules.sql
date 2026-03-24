@@ -12,6 +12,7 @@ create table if not exists public.learning_module_topics (
   id uuid primary key default gen_random_uuid(),
   module_id uuid not null references public.learning_modules(id) on delete cascade,
   topic_title text not null,
+  summary text not null default '',
   sort_order integer not null default 0,
   created_at timestamptz not null default timezone('utc', now()),
   unique (module_id, topic_title)
