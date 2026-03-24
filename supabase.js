@@ -321,6 +321,7 @@ function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards
   const starterModulesBySlug = new Map(starterModules.map((module) => [module.slug, module]));
   const topicsByModuleId = new Map();
   const cardsByTopicId = new Map();
+  const reconciliationDiagnostics = [];
 
   (topics || []).forEach((topic) => {
     const moduleTopics = topicsByModuleId.get(topic.module_id) || [];
@@ -334,7 +335,7 @@ function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards
     cardsByTopicId.set(card.topic_id, topicCards);
   });
 
-  return (modules || []).map((module) => {
+  const mergedModules = (modules || []).map((module) => {
     const starterModule = starterModulesBySlug.get(module.slug);
     const starterTopics = starterModule?.topics || [];
     const starterTopicsByTitle = new Map(starterTopics.map((topic) => [topic.topic_title, topic]));
@@ -358,13 +359,28 @@ function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards
       };
     });
 
-    return {
+    const reconciledModule = {
       ...module,
       local_id: module?.local_id || '',
       db_id: isUuidLike(module?.id) ? module.id : null,
       topics: moduleTopics
     };
+
+    reconciliationDiagnostics.push({
+      slug: module?.slug || '',
+      liveUuidFound: isUuidLike(module?.id),
+      reconciledWithStarter: Boolean(starterModule),
+      liveTopicCount: (topicsByModuleId.get(module.id) || []).length,
+      renderedTopicCount: moduleTopics.length
+    });
+
+    return reconciledModule;
   });
+
+  return {
+    modules: mergedModules,
+    reconciliationDiagnostics
+  };
 }
 
 function isExtensionContext() {
@@ -1628,8 +1644,22 @@ export async function fetchLearningModules() {
       usingBundledCards = true;
     }
 
+    const merged = mergeLearningModulesWithStarterContent(modules || [], topics || [], cards || []);
+    console.log('[Connect.Me] Learning modules reconciliation diagnostics', {
+      fetchedLiveModulesCount: (modules || []).length,
+      fetchedLiveTopicsCount: (topics || []).length,
+      fetchedLiveCardsCount: (cards || []).length,
+      reconciliationBySlug: merged.reconciliationDiagnostics.map((entry) => ({
+        slug: entry.slug,
+        liveUuidFound: entry.liveUuidFound ? 'yes' : 'no',
+        reconciledWithStarter: entry.reconciledWithStarter ? 'yes' : 'no',
+        liveTopicCount: entry.liveTopicCount,
+        renderedTopicCount: entry.renderedTopicCount
+      }))
+    });
+
     return {
-      modules: mergeLearningModulesWithStarterContent(modules || [], topics || [], cards || []),
+      modules: merged.modules,
       source: usingBundledCards ? 'supabase+bundled-cards' : 'supabase',
       persistenceAvailable: true,
       setupRequired: false,
@@ -1639,7 +1669,8 @@ export async function fetchLearningModules() {
         ? 'Modules and connections are synced with Supabase, and the guided lesson cards are being served from bundled starter content.'
         : 'Learning Modules are loading from Supabase and support saved connections.',
       fallbackDetail: '',
-      errorMessage: ''
+      errorMessage: '',
+      reconciliationDiagnostics: merged.reconciliationDiagnostics
     };
   } catch (error) {
     if (isLearningModuleTableMissingMessage(error?.message)) {
