@@ -38,7 +38,13 @@ import {
   upsertProfile
 } from './supabase.js';
 import { privacyHtml } from './privacy.js';
-import { isLikelyLatex, renderFormulaTask, renderRichText } from './math-renderer.js';
+import {
+  BlockMathDisplay,
+  InlineMathText,
+  isProbablyLatex,
+  renderFormulaTask,
+  renderRichText
+} from './math-renderer.js';
 import { getStarterLearningModules } from './learning-modules.js';
 import { buildCollaborativeModuleIndex, getCompletionStates } from './collaborative-learning.js';
 
@@ -1933,10 +1939,13 @@ function renderLearningModulePlayer() {
             </label>
           </div>
           <div class="stack-sm">
-            <div><strong>Simple explanation</strong>${renderRichText(selectedConcept.simple_explanation || '')}</div>
-            <div><strong>Formal explanation</strong>${renderRichText(selectedConcept.formal_explanation || '')}</div>
-            <div><strong>Visual intuition</strong>${renderRichText(selectedConcept.visual_intuition || '')}</div>
-            <div><strong>Formulas</strong>${selectedConcept.formulas.map((formula) => renderRichText(isLikelyLatex(formula) ? `$$${formula}$$` : formula)).join('')}</div>
+            <div><strong>Simple explanation</strong><p>${escapeHtml(selectedConcept.simpleExplanation || '')}</p></div>
+            <div><strong>Formal explanation</strong>
+              ${selectedConcept.formalExplanationText ? `<p>${renderRichText(selectedConcept.formalExplanationText)}</p>` : ''}
+              ${selectedConcept.formalExplanationMath ? BlockMathDisplay(selectedConcept.formalExplanationMath) : ''}
+            </div>
+            <div><strong>Visual intuition</strong><p>${renderRichText(selectedConcept.visualIntuition || '')}</p></div>
+            <div><strong>Formulas</strong>${(selectedConcept.formulas || []).map((formula) => isProbablyLatex(formula) ? BlockMathDisplay(formula) : `<p>${escapeHtml(formula)}</p>`).join('')}</div>
             <div><strong>Usage in transformers</strong><p>${escapeHtml(selectedConcept.usage_in_transformers || '')}</p></div>
             <div><strong>Related concepts</strong><p>${escapeHtml((selectedConcept.related_concepts || []).join(', ') || 'None')}</p></div>
           </div>
@@ -1954,7 +1963,10 @@ function renderLearningModulePlayer() {
             ${(selectedConcept.tasks || []).map((task) => `
               <label class="stack-xs">
                 <strong>${escapeHtml(formatCardTypeLabel(task.type).replaceAll('-', ' '))}</strong>
-                <div class="muted small-text">${renderFormulaTask(task.prompt || '')}</div>
+                <div class="muted small-text">
+                  ${task.completionPromptText ? `<p>${escapeHtml(task.completionPromptText)}</p>` : ''}
+                  ${task.completionFormulaLatex ? BlockMathDisplay(task.completionFormulaLatex) : renderFormulaTask(task.prompt || '')}
+                </div>
                 <textarea ${!completeTogetherOn ? 'disabled' : ''} rows="3" data-action="task-draft" data-task-id="${escapeHtml(task.id)}" placeholder="Add your collaborative completion here...">${escapeHtml(state.collaborationDraftsByTaskId[task.id] || '')}</textarea>
               </label>
             `).join('')}
@@ -1963,7 +1975,7 @@ function renderLearningModulePlayer() {
             <h4>Suggested completion links</h4>
             <ul class="rich-list">
               ${(selectedConcept.suggested_links?.prerequisites || []).map((item) => `<li><strong>Prerequisite:</strong> ${escapeHtml(item)}</li>`).join('')}
-              ${(selectedConcept.suggested_links?.formulas || []).map((item) => `<li><strong>Formula to complete:</strong> ${renderRichText(isLikelyLatex(item) ? `$${item}$` : item)}</li>`).join('')}
+              ${(selectedConcept.suggested_links?.formulas || []).map((item) => `<li><strong>Formula to complete:</strong> ${isProbablyLatex(item) ? InlineMathText(item) : escapeHtml(item)}</li>`).join('')}
               ${(selectedConcept.suggested_links?.related_explanations || []).map((item) => `<li><strong>Related explanation:</strong> ${escapeHtml(item)}</li>`).join('')}
               ${(selectedConcept.suggested_links?.usage_links || []).map((item) => `<li><strong>Usage link:</strong> ${escapeHtml(item)}</li>`).join('')}
               ${selectedConcept.suggested_links?.next_concept ? `<li><strong>Next concept:</strong> ${escapeHtml(selectedConcept.suggested_links.next_concept)}</li>` : ''}

@@ -140,9 +140,11 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'math-attention-math',
         title: 'Scaled dot-product attention math',
         simple_explanation: 'Attention weights come from scaled query-key similarity.',
-        formal_explanation: '$\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)V$.',
+        simpleExplanation: 'Attention weights come from scaled query-key similarity.',
+        formalExplanationText: 'Scaled dot-product attention computes attention weights from query-key similarity and applies them to values.',
+        formalExplanationMath: '\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_k}}\\right)V',
         visual_intuition: 'Higher similarity produces higher influence after normalization.',
-        formulas: ['\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)V'],
+        formulas: ['\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_k}}\\right)V', '\\frac{1}{\\sqrt{d_k}}', 'x_i,\\ \\alpha_{ij},\\ QK^{T}', 'W x + b'],
         usage_in_transformers: 'Central formula in each attention head.',
         related_concepts: ['math-softmax', 'math-probability'],
         prerequisites: ['math-linear-algebra'],
@@ -155,7 +157,14 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'math-softmax'
         },
         tasks: [
-          { id: 'math-attn-missing-term', type: 'fill_formula', prompt: 'Complete: $\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\underline{\\qquad}}\\right)V$.' },
+          {
+            id: 'math-attn-missing-term',
+            type: 'fill_formula',
+            prompt: 'Fill the missing denominator term. $\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\underline{\\hspace{1.5cm}}}\\right)V$',
+            completionPromptText: 'Fill the missing denominator term.',
+            completionFormulaLatex: '\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\underline{\\hspace{1.5cm}}}\\right)V',
+            missingTermPlaceholder: { kind: 'underline_blank', latex: '\\underline{\\hspace{1.5cm}}' }
+          },
           { id: 'math-attn-derive-step', type: 'derivation_step', prompt: 'Add the derivation step that motivates the scaling factor.' }
         ]
       },
@@ -373,19 +382,80 @@ const COLLABORATIVE_BLUEPRINTS = [
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+function splitPromptFormula(prompt = '') {
+  const value = String(prompt || '').trim();
+  const match = value.match(/\$([^$]+)\$/);
+  if (!match) {
+    return {
+      completionPromptText: value,
+      completionFormulaLatex: '',
+      missingTermPlaceholder: null
+    };
+  }
+  const completionFormulaLatex = String(match[1] || '').trim();
+  const completionPromptText = value.replace(match[0], '').replace(/\s+/g, ' ').trim();
+  const missingTermPlaceholder = /\\underline/.test(completionFormulaLatex)
+    ? { kind: 'underline_blank', latex: '\\underline{\\hspace{1.5cm}}' }
+    : null;
+  return {
+    completionPromptText,
+    completionFormulaLatex,
+    missingTermPlaceholder
+  };
+}
+
+function splitFormalExplanation(formalExplanation = '') {
+  const raw = String(formalExplanation || '').trim();
+  if (!raw) {
+    return {
+      formalExplanationText: '',
+      formalExplanationMath: ''
+    };
+  }
+
+  const blockMatch = raw.match(/\$\$([^$]+)\$\$/);
+  if (blockMatch) {
+    return {
+      formalExplanationText: raw.replace(blockMatch[0], '').replace(/\s+/g, ' ').trim(),
+      formalExplanationMath: String(blockMatch[1] || '').trim()
+    };
+  }
+
+  if (/^\$[^$]+\$\.?$/.test(raw)) {
+    return {
+      formalExplanationText: '',
+      formalExplanationMath: raw.replaceAll('$', '').replace(/\.$/, '').trim()
+    };
+  }
+
+  return {
+    formalExplanationText: raw.replace(/\s*\$[^$]+\$\s*/g, ' ').replace(/\s+/g, ' ').trim(),
+    formalExplanationMath: (raw.match(/\$([^$]+)\$/)?.[1] || '').trim()
+  };
+}
+
 function normalizeTask(task = {}, conceptId = '') {
+  const parsedPrompt = splitPromptFormula(task.prompt || '');
   return {
     id: task.id || `${conceptId}-task-${Math.random().toString(36).slice(2, 8)}`,
     type: task.type || 'fill_explanation',
-    prompt: task.prompt || 'Add collaborative completion details.'
+    prompt: task.prompt || 'Add collaborative completion details.',
+    completionPromptText: task.completionPromptText || parsedPrompt.completionPromptText,
+    completionFormulaLatex: task.completionFormulaLatex || parsedPrompt.completionFormulaLatex,
+    missingTermPlaceholder: task.missingTermPlaceholder || parsedPrompt.missingTermPlaceholder
   };
 }
 
 function normalizeConcept(concept = {}) {
   const id = concept.id || `concept-${Math.random().toString(36).slice(2, 8)}`;
+  const formalExplanation = splitFormalExplanation(concept.formalExplanation || concept.formal_explanation || '');
   return {
     ...concept,
     id,
+    simpleExplanation: concept.simpleExplanation || concept.simple_explanation || '',
+    formalExplanationText: concept.formalExplanationText || formalExplanation.formalExplanationText,
+    formalExplanationMath: concept.formalExplanationMath || formalExplanation.formalExplanationMath,
+    visualIntuition: concept.visualIntuition || concept.visual_intuition || '',
     related_concepts: Array.isArray(concept.related_concepts) ? concept.related_concepts : [],
     prerequisites: Array.isArray(concept.prerequisites) ? concept.prerequisites : [],
     applications: Array.isArray(concept.applications) ? concept.applications : [],

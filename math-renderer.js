@@ -76,9 +76,8 @@ function normalizeCommonPseudoLatex(value = '') {
   return normalized.trim();
 }
 
-function normalizeFormulaToLatex(expression = '') {
+export function normalizeLatex(expression = '') {
   return normalizeCommonPseudoLatex(String(expression || ''))
-    .replaceAll('theta', '\\theta')
     .replaceAll('η', '\\eta')
     .replaceAll('∇', '\\nabla')
     .replaceAll('γ', '\\gamma')
@@ -87,18 +86,31 @@ function normalizeFormulaToLatex(expression = '') {
     .replaceAll('ε', '\\varepsilon');
 }
 
-export function isLikelyLatex(content = '') {
+export function isProbablyLatex(content = '') {
   const value = String(content || '').trim();
   if (!value) {
     return false;
   }
-  if (value.includes('\\')) {
+  if (/[$]/.test(value)) {
     return true;
   }
-  if (/[=^_]/.test(value) || /[α-ωΑ-ΩΣθμσγερη∇]/i.test(value)) {
+  if (/(?:\\[A-Za-z]+|\\[,;:!]|\\\(|\\\)|\\\[|\\\])/.test(value)) {
     return true;
   }
-  return /(?:\b(?:sqrt|softmax|frac|sum|prod|Attention|Attn|LN|FFN|MHA)\b|\(.+\))/.test(value);
+  if (/[=^_{}]/.test(value) && /[A-Za-z0-9]/.test(value)) {
+    return true;
+  }
+  if (/[α-ωΑ-ΩΣθμσγερη∇]/i.test(value)) {
+    return true;
+  }
+  if (!/^[-+*/(),.\sA-Za-z0-9]+$/.test(value)) {
+    return false;
+  }
+  const plainWordCount = (value.match(/[A-Za-z]+/g) || []).length;
+  if (/[.!?]/.test(value) || plainWordCount > 6) {
+    return false;
+  }
+  return /(?:[A-Za-z0-9]\s*[+\-*/=]\s*[A-Za-z0-9]|\b\d+\s*[+\-*/=]\s*\d+)/.test(value);
 }
 
 export function splitTextAndMathSegments(text = '') {
@@ -121,7 +133,7 @@ export function splitTextAndMathSegments(text = '') {
   if (lastIndex < source.length) {
     segments.push({ type: 'text', content: source.slice(lastIndex) });
   }
-  if (!segments.length && isLikelyLatex(source)) {
+  if (!segments.length && isProbablyLatex(source)) {
     return [{ type: 'math-block', content: source.trim() }];
   }
   return segments.length ? segments : [{ type: 'text', content: source }];
@@ -132,7 +144,7 @@ function renderKaTeX(expression = '', { displayMode = false } = {}) {
     return null;
   }
   try {
-    return globalThis.katex.renderToString(normalizeFormulaToLatex(expression), {
+    return globalThis.katex.renderToString(normalizeLatex(expression), {
       throwOnError: true,
       displayMode,
       strict: 'ignore',
@@ -501,7 +513,7 @@ export function renderMathToMarkup(expression = '', { displayMode = false } = {}
   }
 
   try {
-    const parser = new LatexToMathMLParser(normalizeFormulaToLatex(expression));
+    const parser = new LatexToMathMLParser(normalizeLatex(expression));
     const markup = parser.parse(displayMode);
     mathMarkupCache.set(key, markup);
     return markup;
@@ -515,8 +527,13 @@ export function renderMathToMarkup(expression = '', { displayMode = false } = {}
   }
 }
 
-export function InlineMath(expression = '') {
-  const normalized = normalizeFormulaToLatex(expression);
+export function safeRenderMath(expression = '', { displayMode = false } = {}) {
+  const normalized = normalizeLatex(expression);
+  return renderMathToMarkup(normalized, { displayMode });
+}
+
+export function InlineMathText(expression = '') {
+  const normalized = normalizeLatex(expression);
   const rendered = renderMathToMarkup(normalized, { displayMode: false });
   if (!rendered) {
     return `<code class="math-inline-fallback">${escapeHtml(expression)}</code>`;
@@ -524,8 +541,8 @@ export function InlineMath(expression = '') {
   return `<span class="math-inline-shell math-inline-katex">${rendered}</span>`;
 }
 
-export function BlockMath(expression = '') {
-  const normalized = normalizeFormulaToLatex(expression);
+export function BlockMathDisplay(expression = '') {
+  const normalized = normalizeLatex(expression);
   const rendered = renderMathToMarkup(normalized, { displayMode: true });
   if (!rendered) {
     return `<pre class="math-block-fallback">${escapeHtml(expression)}</pre>`;
@@ -539,11 +556,11 @@ function renderInlineSegments(text = '') {
   const segments = splitTextAndMathSegments(source);
   for (const segment of segments) {
     if (segment.type === 'math-inline') {
-      fragments.push(InlineMath(segment.content));
+      fragments.push(InlineMathText(segment.content));
       continue;
     }
     if (segment.type === 'math-block') {
-      fragments.push(BlockMath(segment.content));
+      fragments.push(BlockMathDisplay(segment.content));
       continue;
     }
     fragments.push(escapeHtml(segment.content));
@@ -554,7 +571,7 @@ function renderInlineSegments(text = '') {
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
-export function MathContentRenderer(text = '') {
+export function RichTextWithInlineMath(text = '') {
   const source = String(text || '').trim();
   if (!source) {
     return '<p></p>';
@@ -578,17 +595,13 @@ export function MathContentRenderer(text = '') {
     const parts = splitTextAndMathSegments(trimmed);
     const rendered = parts.map((part) => {
       if (part.type === 'math-block') {
-        return BlockMath(part.content);
+        return BlockMathDisplay(part.content);
       }
       if (part.type === 'math-inline') {
-        return `<p>${InlineMath(part.content)}</p>`;
+        return `<p>${InlineMathText(part.content)}</p>`;
       }
       return `<p>${part.content.split('\n').map((line) => renderInlineSegments(line)).join('<br />')}</p>`;
     }).join('');
-
-    if (parts.length === 1 && parts[0].type === 'text' && isLikelyLatex(trimmed)) {
-      return BlockMath(trimmed);
-    }
 
     return rendered;
   }).join('');
@@ -598,9 +611,14 @@ export function MathContentRenderer(text = '') {
 }
 
 export function renderRichText(text = '') {
-  return MathContentRenderer(text);
+  return RichTextWithInlineMath(text);
 }
 
 export function renderFormulaTask(prompt = '') {
   return renderRichText(normalizePlaceholderToken(prompt));
 }
+
+export const InlineMath = InlineMathText;
+export const BlockMath = BlockMathDisplay;
+export const MathContentRenderer = RichTextWithInlineMath;
+export const isLikelyLatex = isProbablyLatex;
