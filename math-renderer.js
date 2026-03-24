@@ -45,25 +45,86 @@ function hasKatexRenderer() {
     && typeof globalThis.katex.renderToString === 'function';
 }
 
+function normalizePlaceholderToken(value = '') {
+  return String(value || '')
+    .replaceAll(/\bunderline\b/gi, '\\underline{\\hspace{1.5cm}}')
+    .replaceAll(/_{3,}/g, '\\underline{\\hspace{1.5cm}}');
+}
+
+function normalizeCommonPseudoLatex(value = '') {
+  let normalized = String(value || '');
+  normalized = normalizePlaceholderToken(normalized);
+
+  normalized = normalized
+    .replaceAll(/\\mathrm\s+([A-Za-z]+)/g, '\\mathrm{$1}')
+    .replaceAll(/(?<!\\mathrm\{)Attention\(Q,\s*K,\s*V\)/g, '\\mathrm{Attention}(Q,K,V)')
+    .replaceAll(/(?<!\\mathrm\{)Attn\(([^)]+)\)/g, '\\mathrm{Attn}($1)')
+    .replaceAll(/(?<!\\mathrm\{)softmax\b/g, '\\mathrm{softmax}')
+    .replaceAll(/QK\^T/g, 'QK^{T}')
+    .replaceAll(/q_i\^T/g, 'q_i^{T}')
+    .replaceAll(/\bsqrt\s*\(\s*([^)]+)\s*\)/g, '\\sqrt{$1}')
+    .replaceAll(/Σ_j/g, '\\sum_j')
+    .replaceAll(/Σ/g, '\\sum')
+    .replaceAll(/\balpha_ij\b/g, '\\alpha_{ij}')
+    .replaceAll(/->/g, '\\to ');
+
+  normalized = normalized
+    .replaceAll(/\\mathrm\{softmax\}\s*\(\s*QK\^\{?T\}?\s*\/\s*\\sqrt\{d_k\}\s*\)/g, '\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_k}}\\right)')
+    .replaceAll(/\\mathrm\{softmax\}\s*\(\s*QK\^\{?T\}?\s*\/\s*sqrt\(d_k\)\s*\)/g, '\\mathrm{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_k}}\\right)')
+    .replaceAll(/\\mathrm\{softmax\}\s*\(\s*([^)]+)\s*\/\s*([^)]+)\s*\)/g, '\\mathrm{softmax}\\left(\\frac{$1}{$2}\\right)');
+
+  return normalized.trim();
+}
+
 function normalizeFormulaToLatex(expression = '') {
-  return String(expression || '')
-    .replaceAll('Attention(Q,K,V)', '\\mathrm{Attention}(Q,K,V)')
-    .replaceAll('Attn(X)', '\\mathrm{Attn}(X)')
-    .replaceAll('softmax', '\\mathrm{softmax}')
-    .replaceAll('sqrt(d_k)', '\\sqrt{d_k}')
-    .replaceAll('QK^T', 'QK^{\\top}')
-    .replaceAll('q_i^T', 'q_i^{\\top}')
-    .replaceAll('Σ_j', '\\sum_j')
-    .replaceAll('Σ', '\\sum')
-    .replaceAll('alpha_ij', '\\alpha_{ij}')
+  return normalizeCommonPseudoLatex(String(expression || ''))
     .replaceAll('theta', '\\theta')
     .replaceAll('η', '\\eta')
     .replaceAll('∇', '\\nabla')
     .replaceAll('γ', '\\gamma')
     .replaceAll('μ', '\\mu')
     .replaceAll('σ', '\\sigma')
-    .replaceAll('ε', '\\varepsilon')
-    .replaceAll('->', '\\to ');
+    .replaceAll('ε', '\\varepsilon');
+}
+
+export function isLikelyLatex(content = '') {
+  const value = String(content || '').trim();
+  if (!value) {
+    return false;
+  }
+  if (value.includes('\\')) {
+    return true;
+  }
+  if (/[=^_]/.test(value) || /[α-ωΑ-ΩΣθμσγερη∇]/i.test(value)) {
+    return true;
+  }
+  return /(?:\b(?:sqrt|softmax|frac|sum|prod|Attention|Attn|LN|FFN|MHA)\b|\(.+\))/.test(value);
+}
+
+export function splitTextAndMathSegments(text = '') {
+  const source = String(text || '');
+  const segments = [];
+  const blockPattern = /(\$\$[\s\S]+?\$\$|\$[^$]+\$)/g;
+  let lastIndex = 0;
+  let match = blockPattern.exec(source);
+  while (match) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', content: source.slice(lastIndex, match.index) });
+    }
+    const wrapped = match[0];
+    const isBlock = wrapped.startsWith('$$');
+    const formula = wrapped.slice(isBlock ? 2 : 1, isBlock ? -2 : -1).trim();
+    segments.push({ type: isBlock ? 'math-block' : 'math-inline', content: formula });
+    lastIndex = match.index + wrapped.length;
+    match = blockPattern.exec(source);
+  }
+  if (lastIndex < source.length) {
+    segments.push({ type: 'text', content: source.slice(lastIndex) });
+  }
+  if (!segments.length && isLikelyLatex(source)) {
+    return [{ type: 'math-block', content: source.trim() }];
+  }
+  return segments.length ? segments : [{ type: 'text', content: source }];
 }
 
 function renderKaTeX(expression = '', { displayMode = false } = {}) {
@@ -72,12 +133,13 @@ function renderKaTeX(expression = '', { displayMode = false } = {}) {
   }
   try {
     return globalThis.katex.renderToString(normalizeFormulaToLatex(expression), {
-      throwOnError: false,
+      throwOnError: true,
       displayMode,
       strict: 'ignore',
       output: 'html'
     });
-  } catch (_error) {
+  } catch (error) {
+    console.warn('[math-renderer] Failed to render formula with KaTeX:', expression, error);
     return null;
   }
 }
@@ -438,48 +500,53 @@ export function renderMathToMarkup(expression = '', { displayMode = false } = {}
     return katexMarkup;
   }
 
-  const parser = new LatexToMathMLParser(normalizeFormulaToLatex(expression));
-  const markup = parser.parse(displayMode);
-  mathMarkupCache.set(key, markup);
-  return markup;
-}
-
-function isLikelyMathExpression(content = '') {
-  const value = String(content || '').trim();
-  if (!value) {
-    return false;
+  try {
+    const parser = new LatexToMathMLParser(normalizeFormulaToLatex(expression));
+    const markup = parser.parse(displayMode);
+    mathMarkupCache.set(key, markup);
+    return markup;
+  } catch (error) {
+    console.warn('[math-renderer] Falling back to plain-text formula rendering:', expression, error);
+    const fallback = displayMode
+      ? `<pre class="math-block-fallback">${escapeHtml(String(expression || ''))}</pre>`
+      : `<code class="math-inline-fallback">${escapeHtml(String(expression || ''))}</code>`;
+    mathMarkupCache.set(key, fallback);
+    return fallback;
   }
-  return /[=^_\\]|sqrt|softmax|Attention|Attn|sum|prod|frac|[α-ωΑ-ΩΣθμσγερη∇]/i.test(value);
 }
 
 export function InlineMath(expression = '') {
-  return `<span class="math-inline-shell math-inline-katex">${renderMathToMarkup(expression, { displayMode: false })}</span>`;
+  const normalized = normalizeFormulaToLatex(expression);
+  const rendered = renderMathToMarkup(normalized, { displayMode: false });
+  if (!rendered) {
+    return `<code class="math-inline-fallback">${escapeHtml(expression)}</code>`;
+  }
+  return `<span class="math-inline-shell math-inline-katex">${rendered}</span>`;
 }
 
 export function BlockMath(expression = '') {
-  return `<div class="math-block-shell math-block-katex">${renderMathToMarkup(expression, { displayMode: true })}</div>`;
+  const normalized = normalizeFormulaToLatex(expression);
+  const rendered = renderMathToMarkup(normalized, { displayMode: true });
+  if (!rendered) {
+    return `<pre class="math-block-fallback">${escapeHtml(expression)}</pre>`;
+  }
+  return `<div class="math-block-shell math-block-katex">${rendered}</div>`;
 }
 
 function renderInlineSegments(text = '') {
   const fragments = [];
   const source = String(text || '');
-  const pattern = /(\$[^$]+\$)/g;
-  let lastIndex = 0;
-  let match = pattern.exec(source);
-
-  while (match) {
-    if (match.index > lastIndex) {
-      fragments.push(escapeHtml(source.slice(lastIndex, match.index)));
+  const segments = splitTextAndMathSegments(source);
+  for (const segment of segments) {
+    if (segment.type === 'math-inline') {
+      fragments.push(InlineMath(segment.content));
+      continue;
     }
-
-    const expression = match[0].slice(1, -1).trim();
-    fragments.push(InlineMath(expression));
-    lastIndex = match.index + match[0].length;
-    match = pattern.exec(source);
-  }
-
-  if (lastIndex < source.length) {
-    fragments.push(escapeHtml(source.slice(lastIndex)));
+    if (segment.type === 'math-block') {
+      fragments.push(BlockMath(segment.content));
+      continue;
+    }
+    fragments.push(escapeHtml(segment.content));
   }
 
   return fragments.join('')
@@ -508,15 +575,18 @@ export function MathContentRenderer(text = '') {
       return `<ul class="rich-list">${items}</ul>`;
     }
 
-    const parts = trimmed.split(/(\$\$[\s\S]+?\$\$)/g).filter(Boolean);
+    const parts = splitTextAndMathSegments(trimmed);
     const rendered = parts.map((part) => {
-      if (/^\$\$[\s\S]+\$\$$/.test(part)) {
-        return BlockMath(part.slice(2, -2).trim());
+      if (part.type === 'math-block') {
+        return BlockMath(part.content);
       }
-      return `<p>${part.split('\n').map((line) => renderInlineSegments(line)).join('<br />')}</p>`;
+      if (part.type === 'math-inline') {
+        return `<p>${InlineMath(part.content)}</p>`;
+      }
+      return `<p>${part.content.split('\n').map((line) => renderInlineSegments(line)).join('<br />')}</p>`;
     }).join('');
 
-    if (parts.length === 1 && isLikelyMathExpression(trimmed) && !trimmed.includes('$')) {
+    if (parts.length === 1 && parts[0].type === 'text' && isLikelyLatex(trimmed)) {
       return BlockMath(trimmed);
     }
 
@@ -529,4 +599,8 @@ export function MathContentRenderer(text = '') {
 
 export function renderRichText(text = '') {
   return MathContentRenderer(text);
+}
+
+export function renderFormulaTask(prompt = '') {
+  return renderRichText(normalizePlaceholderToken(prompt));
 }

@@ -49,13 +49,13 @@ const COLLABORATIVE_BLUEPRINTS = [
         applications: ['fnd-embeddings'],
         suggested_links: {
           prerequisites: ['Vector similarity', 'Softmax normalization'],
-          formulas: ['Derive alpha_ij from s_ij'],
+          formulas: ['Derive \\alpha_{ij} from s_{ij}'],
           related_explanations: ['Interpret attention matrix rows'],
           usage_links: ['Pronoun/coreference resolution behavior'],
           next_concept: 'fnd-positional-encoding'
         },
         tasks: [
-          { id: 'fnd-attn-derive', type: 'derivation_step', prompt: 'Complete the missing derivation step from raw scores s_ij to normalized weights alpha_ij.' },
+          { id: 'fnd-attn-derive', type: 'derivation_step', prompt: 'Complete the missing derivation step from raw scores $s_{ij}$ to normalized weights $\\alpha_{ij}$.' },
           { id: 'fnd-attn-connect', type: 'connect_concept', prompt: 'Connect this concept to one architecture block where it is directly applied.' },
           { id: 'fnd-attn-example', type: 'usage_example', prompt: 'Add one usage example from language modeling or translation.' }
         ]
@@ -132,7 +132,7 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'math-attention-math'
         },
         tasks: [
-          { id: 'math-linalg-dims', type: 'fill_formula', prompt: 'Fill in dimensions for X(nxd_model) * W(d_model x ____ ) = Q.' },
+          { id: 'math-linalg-dims', type: 'fill_formula', prompt: 'Fill in dimensions for $X\\,(n\\times d_{\\mathrm{model}})\\cdot W\\,(d_{\\mathrm{model}}\\times\\underline{\\hspace{1.5cm}})=Q$.' },
           { id: 'math-linalg-usage', type: 'usage_example', prompt: 'Give one concrete usage example inside an encoder block.' }
         ]
       },
@@ -149,7 +149,7 @@ const COLLABORATIVE_BLUEPRINTS = [
         applications: ['math-multihead'],
         suggested_links: {
           prerequisites: ['Dot product geometry'],
-          formulas: ['Why divide by sqrt(d_k)'],
+          formulas: ['Why divide by \\sqrt{d_k}'],
           related_explanations: ['Score variance stabilization'],
           usage_links: ['Self-attention score matrix'],
           next_concept: 'math-softmax'
@@ -186,9 +186,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'math-optimization',
         title: 'Optimization and gradients',
         simple_explanation: 'Training updates parameters via gradient-based optimization.',
-        formal_explanation: 'θ_{t+1}=θ_t-η∇_θ L(θ_t), often with Adam-style adaptive moments.',
+        formal_explanation: '$\\theta_{t+1}=\\theta_t-\\eta\\nabla_{\\theta}L(\\theta_t)$, often with Adam-style adaptive moments.',
         visual_intuition: 'Loss landscapes are navigated using local slope information.',
-        formulas: ['θ_{t+1}=θ_t-η∇_θ L(θ_t)'],
+        formulas: ['\\theta_{t+1}=\\theta_t-\\eta\\nabla_{\\theta}L(\\theta_t)'],
         usage_in_transformers: 'Used to train every projection and normalization parameter.',
         related_concepts: ['math-softmax', 'math-linear-algebra'],
         prerequisites: ['math-softmax'],
@@ -209,9 +209,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'math-multihead',
         title: 'Multi-head decomposition',
         simple_explanation: 'Multiple heads learn different attention patterns in parallel.',
-        formal_explanation: 'head_h = Attention(XW_Q^h, XW_K^h, XW_V^h); MHA = Concat(head_h)W_O.',
+        formal_explanation: '$\\mathrm{head}_h=\\mathrm{Attention}(XW_Q^{h},XW_K^{h},XW_V^{h})$, and $\\mathrm{MHA}(X)=\\mathrm{Concat}(\\mathrm{head}_1,\\ldots,\\mathrm{head}_H)W_O$.',
         visual_intuition: 'Different heads act like specialized lenses over the same context.',
-        formulas: ['MHA(X)=Concat(head_1,...,head_H)W_O'],
+        formulas: ['\\mathrm{MHA}(X)=\\mathrm{Concat}(\\mathrm{head}_1,\\ldots,\\mathrm{head}_H)W_O'],
         usage_in_transformers: 'Combines diverse context signals before residual paths.',
         related_concepts: ['math-attention-math', 'math-linear-algebra'],
         prerequisites: ['math-attention-math'],
@@ -237,9 +237,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'arch-block-flow',
         title: 'Transformer block data flow',
         simple_explanation: 'A block applies attention, residual addition, normalization, then feed-forward layers.',
-        formal_explanation: 'x -> LN(x + MHA(x)) -> LN(x + FFN(x)).',
+        formal_explanation: '$x \\to \\mathrm{LN}(x+\\mathrm{MHA}(x)) \\to \\mathrm{LN}(x+\\mathrm{FFN}(x))$.',
         visual_intuition: 'Information travels through two compute paths with shortcut highways.',
-        formulas: ['y = LN(x + MHA(x))', 'z = LN(y + FFN(y))'],
+        formulas: ['y=\\mathrm{LN}(x+\\mathrm{MHA}(x))', 'z=\\mathrm{LN}(y+\\mathrm{FFN}(y))'],
         usage_in_transformers: 'Defines repeated backbone unit in encoder/decoder stacks.',
         related_concepts: ['arch-residuals', 'arch-layernorm'],
         prerequisites: [],
@@ -252,7 +252,7 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'arch-residuals'
         },
         tasks: [
-          { id: 'arch-flow-fill', type: 'fill_formula', prompt: 'Complete: z = LN(y + ____ (y))' },
+          { id: 'arch-flow-fill', type: 'fill_formula', prompt: 'Complete: $z=\\mathrm{LN}(y+\\underline{\\hspace{1.5cm}}(y))$.' },
           { id: 'arch-flow-why', type: 'why_matters', prompt: 'Why does this ordering help stable deep training?' }
         ]
       },
@@ -282,9 +282,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'arch-layernorm',
         title: 'Layer normalization',
         simple_explanation: 'LayerNorm stabilizes token representations by normalizing feature statistics.',
-        formal_explanation: 'LN(x) = γ((x-μ)/sqrt(σ^2+ε)) + β.',
+        formal_explanation: '$\\mathrm{LN}(x)=\\gamma\\left(\\frac{x-\\mu}{\\sqrt{\\sigma^2+\\varepsilon}}\\right)+\\beta$.',
         visual_intuition: 'It keeps feature scales consistent so optimization stays stable across depth.',
-        formulas: ['LN(x)=γ((x-μ)/sqrt(σ^2+ε))+β'],
+        formulas: ['\\mathrm{LN}(x)=\\gamma\\left(\\frac{x-\\mu}{\\sqrt{\\sigma^2+\\varepsilon}}\\right)+\\beta'],
         usage_in_transformers: 'Used in each block around attention/FFN composition.',
         related_concepts: ['arch-residuals', 'arch-ffn'],
         prerequisites: ['arch-residuals'],
@@ -297,16 +297,16 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'arch-ffn'
         },
         tasks: [
-          { id: 'arch-ln-hidden-term', type: 'fill_formula', prompt: 'Fill the missing stabilizer term: sqrt(σ^2 + ____ )' }
+          { id: 'arch-ln-hidden-term', type: 'fill_formula', prompt: 'Fill the missing stabilizer term: $\\sqrt{\\sigma^2+\\underline{\\hspace{1.5cm}}}$.' }
         ]
       },
       {
         id: 'arch-ffn',
         title: 'Position-wise feed-forward network',
         simple_explanation: 'FFN applies nonlinear transformation to each token independently.',
-        formal_explanation: 'FFN(x)=W_2 σ(W_1 x + b_1) + b_2.',
+        formal_explanation: '$\\mathrm{FFN}(x)=W_2\\,\\sigma(W_1x+b_1)+b_2$.',
         visual_intuition: 'After context mixing, FFN enriches each token with learned feature composition.',
-        formulas: ['FFN(x)=W_2σ(W_1x+b_1)+b_2'],
+        formulas: ['\\mathrm{FFN}(x)=W_2\\,\\sigma(W_1x+b_1)+b_2'],
         usage_in_transformers: 'Second major sublayer in each transformer block.',
         related_concepts: ['arch-layernorm', 'arch-multihead-layout'],
         prerequisites: ['arch-layernorm'],
@@ -328,14 +328,14 @@ const COLLABORATIVE_BLUEPRINTS = [
         simple_explanation: 'Multi-head layout splits attention into parallel subspaces.',
         formal_explanation: 'Heads are projected, attended independently, concatenated, and projected back.',
         visual_intuition: 'Parallel branches each focus on different relation types and are merged.',
-        formulas: ['Concat(head_1,...,head_H)W_O'],
+        formulas: ['\\mathrm{Concat}(\\mathrm{head}_1,\\ldots,\\mathrm{head}_H)W_O'],
         usage_in_transformers: 'Main attention substructure in encoder and decoder.',
         related_concepts: ['arch-block-flow', 'arch-encoder-decoder'],
         prerequisites: ['arch-ffn'],
         applications: ['arch-encoder-decoder'],
         suggested_links: {
           prerequisites: ['Projection matrices'],
-          formulas: ['Head dimension relation d_model = H * d_head'],
+          formulas: ['Head dimension relation $d_{\\mathrm{model}}=H\\cdot d_{\\mathrm{head}}$'],
           related_explanations: ['Interpretability of head specialization'],
           usage_links: ['Cross-attention in decoder'],
           next_concept: 'arch-encoder-decoder'
@@ -350,7 +350,7 @@ const COLLABORATIVE_BLUEPRINTS = [
         simple_explanation: 'The encoder builds context-rich representations; decoder generates outputs with self and cross attention.',
         formal_explanation: 'Decoder attends to prior outputs causally and to encoder outputs via cross-attention.',
         visual_intuition: 'Think of encoder as memory builder and decoder as guided generator.',
-        formulas: ['Decoder block: CausalMHA + CrossAttn + FFN'],
+        formulas: ['\\mathrm{DecoderBlock}(x,m)=\\mathrm{FFN}(\\mathrm{CrossAttn}(\\mathrm{CausalMHA}(x),m))'],
         usage_in_transformers: 'Used in seq2seq tasks like translation and summarization.',
         related_concepts: ['arch-multihead-layout', 'arch-block-flow'],
         prerequisites: ['arch-multihead-layout'],
