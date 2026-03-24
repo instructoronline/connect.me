@@ -64,6 +64,9 @@ function getLearningModuleMissingRequirement(message = '') {
   if (normalized.includes('get_learning_module_connected_users')) {
     return 'public.get_learning_module_connected_users(text) RPC function';
   }
+  if (normalized.includes('get_learning_module_connections')) {
+    return 'public.get_learning_module_connections(text) RPC function';
+  }
   if (normalized.includes('row-level security') || normalized.includes('permission denied') || normalized.includes('rls')) {
     return 'RLS policy or grant permissions';
   }
@@ -115,8 +118,10 @@ function isLearningModuleConnectionsTableMissingMessage(message = '') {
   return normalized.includes("could not find the table 'public.learning_module_connections' in the schema cache")
     || normalized.includes('relation "public.learning_module_connections" does not exist')
     || normalized.includes("could not find the function public.get_learning_module_connected_users")
+    || normalized.includes("could not find the function public.get_learning_module_connections")
     || (normalized.includes('learning_module_connections') && normalized.includes('schema cache'))
-    || (normalized.includes('get_learning_module_connected_users') && normalized.includes('does not exist'));
+    || (normalized.includes('get_learning_module_connected_users') && normalized.includes('does not exist'))
+    || (normalized.includes('get_learning_module_connections') && normalized.includes('does not exist'));
 }
 
 function isTransientLearningModulePersistenceMessage(message = '') {
