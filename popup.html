@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="popup-body light-theme" data-popup-min-width="420">
-    <main class="dashboard-shell popup-dashboard">
+    <main class="dashboard-shell popup-dashboard app-shell">
       <section class="popup-app-frame">
         <header class="popup-topbar">
           <div class="popup-brand-lockup">
@@ -61,7 +61,7 @@
 
       <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
 
-      <nav class="tab-bar dashboard-nav" aria-label="Popup tabs">
+      <nav class="tab-bar segmented-nav dashboard-nav" aria-label="Popup tabs">
         <button class="tab-link active" data-tab="currentSiteTab">Current Site</button>
         <button class="tab-link" data-tab="topSitesTab">Top Sites</button>
         <button class="tab-link" data-tab="settingsTab">Settings</button>
@@ -225,13 +225,13 @@
       <div class="popup-panel-layout">
         <section id="currentSiteTab" class="tab-panel active dashboard-block">
           <article class="card stack-md workspace-card current-site-card">
-            <div class="section-heading dashboard-section-heading">
+            <div class="section-heading dashboard-section-heading panel-header">
               <div>
-                <p class="eyebrow">Workspace</p>
-                <h2>Current Site</h2>
-                <p class="muted">See your current site details, your profile summary, and active members on the same site.</p>
+                <p class="eyebrow panel-kicker">Workspace</p>
+                <h2 class="panel-title">Current Site</h2>
+                <p class="muted panel-subtitle">See your current site details, your profile summary, and active members on the same site.</p>
               </div>
-              <span class="badge">Live sync</span>
+              <span class="badge status-pill">Live sync</span>
             </div>
 
             <section class="site-url-card stack-sm">
@@ -275,11 +275,11 @@
 
         <section id="topSitesTab" class="tab-panel dashboard-block">
           <article class="card stack-md workspace-card">
-            <div class="section-heading dashboard-section-heading">
+            <div class="section-heading dashboard-section-heading panel-header">
               <div>
-                <p class="eyebrow">Discovery</p>
-                <h2>Top Sites</h2>
-                <p class="muted">Domains with the highest number of active Connect.Me users right now.</p>
+                <p class="eyebrow panel-kicker">Discovery</p>
+                <h2 class="panel-title">Top Sites</h2>
+                <p class="muted panel-subtitle">Domains with the highest number of active Connect.Me users right now.</p>
               </div>
               <button id="refreshTopSites" type="button" class="secondary small">Refresh</button>
             </div>
@@ -301,11 +301,11 @@
 
         <section id="settingsTab" class="tab-panel dashboard-block">
           <article class="card stack-md workspace-card">
-            <div class="section-heading dashboard-section-heading">
+            <div class="section-heading dashboard-section-heading panel-header">
               <div>
-                <p class="eyebrow">Controls</p>
-                <h2>Settings & consent</h2>
-                <p class="muted">Manage tracking scope, sharing preferences, invisible mode, and extension configuration.</p>
+                <p class="eyebrow panel-kicker">Controls</p>
+                <h2 class="panel-title">Settings & consent</h2>
+                <p class="muted panel-subtitle">Manage tracking scope, sharing preferences, invisible mode, and extension configuration.</p>
               </div>
             </div>
 
@@ -356,11 +356,11 @@
 
         <section id="privacyTab" class="tab-panel dashboard-block">
           <article class="card stack-md workspace-card">
-            <div class="section-heading dashboard-section-heading">
+            <div class="section-heading dashboard-section-heading panel-header">
               <div>
-                <p class="eyebrow">Policy</p>
-                <h2>Privacy</h2>
-                <p class="muted">Review how Connect.Me handles consent, retention, and visible current-site detail.</p>
+                <p class="eyebrow panel-kicker">Policy</p>
+                <h2 class="panel-title">Privacy</h2>
+                <p class="muted panel-subtitle">Review how Connect.Me handles consent, retention, and visible current-site detail.</p>
               </div>
             </div>
             <div id="privacyPolicyContent" class="privacy-copy"></div>
