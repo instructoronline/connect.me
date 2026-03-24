@@ -1689,7 +1689,11 @@ async function loadLearningModules({ force = false } = {}) {
   renderLearningModulesSection();
 
   try {
-    const modulePayload = (!force && state.learningModules.length)
+    const canReuseCachedModules = !force
+      && state.learningModules.length
+      && getLearningModulesStatus().persistenceAvailable;
+
+    const modulePayload = canReuseCachedModules
       ? { modules: state.learningModules, ...getLearningModulesStatus() }
       : await fetchLearningModules();
 
