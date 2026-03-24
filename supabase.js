@@ -81,7 +81,15 @@ function getLearningModulesFallbackPayload({ reason = 'unavailable', error = nul
     : 'Supabase is temporarily unavailable, so starter modules are being shown from built-in local data.';
 
   return {
-    modules: cloneLearningModuleFallbackData().map((module) => ({ ...module, db_id: null })),
+    modules: cloneLearningModuleFallbackData().map((module, index) => {
+      const fallbackId = String(module?.id || module?.slug || '').trim();
+      return {
+        ...module,
+        id: fallbackId || `local-module-${index + 1}`,
+        local_id: fallbackId || module?.slug || '',
+        db_id: null
+      };
+    }),
     source: 'fallback',
     persistenceAvailable: false,
     setupRequired,
