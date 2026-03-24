@@ -6,11 +6,7 @@
   "minimum_chrome_version": "114",
   "action": {
     "default_title": "Connect.Me",
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "assets/branding/generated/chrome/icon-16.png",
-      "32": "assets/branding/generated/chrome/icon-32.png"
-    }
+    "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js",
@@ -36,11 +32,5 @@
         "<all_urls>"
       ]
     }
-  ],
-  "icons": {
-    "16": "assets/branding/generated/chrome/icon-16.png",
-    "32": "assets/branding/generated/chrome/icon-32.png",
-    "48": "assets/branding/generated/chrome/icon-48.png",
-    "128": "assets/branding/generated/chrome/icon-128.png"
-  }
+  ]
 }
