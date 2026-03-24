@@ -155,6 +155,15 @@ const state = {
   lastPresenceSignature: '',
   lastProfileSummarySignature: '',
   lastLearningModulesStatusSignature: '',
+  lastLearningModulesListSignature: '',
+  lastProfileFormSignature: '',
+  lastProfileWorkspaceSignature: '',
+  lastDataControlsSignature: '',
+  lastCurrentSiteSummarySignature: '',
+  lastActiveUsersSignature: '',
+  lastSupabaseDiagnosticsSignature: '',
+  learningModulesInitialized: false,
+  lastLearningModulesUserId: '',
   profileDrawerOpen: false,
   isNavExpanded: false,
   activeSection: 'currentSiteTab',
@@ -328,6 +337,19 @@ async function confirmDangerousAction(message) {
 
 function renderCurrentSiteUrlSummary() {
   const scoped = getCurrentSiteScope();
+  const signature = JSON.stringify({
+    domain: scoped?.domain || '',
+    pathDisplay: scoped?.pathDisplay || '',
+    fullUrl: scoped?.fullUrl || '',
+    canShowPath: Boolean(scoped?.canShowPath),
+    canShowFullUrl: Boolean(scoped?.canShowFullUrl),
+    privacyDescription: scoped?.privacyDescription || ''
+  });
+  if (state.lastCurrentSiteSummarySignature === signature) {
+    return;
+  }
+  state.lastCurrentSiteSummarySignature = signature;
+
   if (!scoped) {
     els.currentSitePrivacyNote.textContent = 'Open a supported website to view current site details.';
     els.currentSiteUrlSummary.innerHTML = '<div class="empty-state">Open a supported website to view current site details.</div>';
@@ -800,6 +822,24 @@ function renderAuthState() {
 
 function renderProfileForm() {
   const visibility = normalizeProfileVisibility(state.profile || {});
+  const formSignature = JSON.stringify({
+    userId: state.user?.id || '',
+    firstName: state.profile?.first_name || '',
+    lastName: state.profile?.last_name || '',
+    placeOfWork: state.profile?.place_of_work || '',
+    education: state.profile?.education || '',
+    currentLocation: state.profile?.current_location || '',
+    headline: state.profile?.headline || '',
+    bio: state.profile?.bio || '',
+    avatarUrl: state.profile?.avatar_url || '',
+    avatarPath: state.profile?.avatar_path || '',
+    visibility
+  });
+  if (state.lastProfileFormSignature === formSignature) {
+    return;
+  }
+  state.lastProfileFormSignature = formSignature;
+
   els.firstName.value = state.profile?.first_name || '';
   els.lastName.value = state.profile?.last_name || '';
   els.placeOfWork.value = state.profile?.place_of_work || '';
@@ -814,11 +854,24 @@ function renderProfileForm() {
   els.shareEducation.value = String(visibility.share_education);
   els.shareCurrentLocation.value = String(visibility.share_current_location);
   els.shareBio.value = String(visibility.share_bio);
-  els.avatarPreview.innerHTML = renderAvatar(state.profile, 'large');
+  const nextAvatarMarkup = renderAvatar(state.profile, 'large');
+  if (els.avatarPreview.dataset.renderedAvatar !== nextAvatarMarkup) {
+    els.avatarPreview.innerHTML = nextAvatarMarkup;
+    els.avatarPreview.dataset.renderedAvatar = nextAvatarMarkup;
+  }
   renderProfilePrompt();
 }
 
 function renderProfileSummary() {
+  const summarySignature = JSON.stringify({
+    userId: state.user?.id || '',
+    profile: state.profile || null
+  });
+  if (state.lastProfileSummarySignature === summarySignature) {
+    return;
+  }
+  state.lastProfileSummarySignature = summarySignature;
+
   if (!state.user) {
     els.selfProfileSummary.innerHTML = '<div class="empty-state">Sign in to view your profile.</div>';
     return;
@@ -1001,6 +1054,11 @@ function renderSupabaseConfiguration() {
     provider: 'Unavailable',
     persistence: 'No active session'
   };
+  const diagnosticsSignature = JSON.stringify({ diagnostics, userEmail: state.user?.email || '' });
+  if (state.lastSupabaseDiagnosticsSignature === diagnosticsSignature) {
+    return;
+  }
+  state.lastSupabaseDiagnosticsSignature = diagnosticsSignature;
 
   const tableMarkup = [
     buildInfoTile('profiles', 'Configured', 'Stores public profile fields and visibility flags.'),
@@ -1051,6 +1109,14 @@ function renderProfileWorkspaceSection() {
   if (!isDesktopWorkspace || !els.profileWorkspaceSummary) {
     return;
   }
+  const workspaceSignature = JSON.stringify({
+    userId: state.user?.id || '',
+    profile: state.profile || null
+  });
+  if (state.lastProfileWorkspaceSignature === workspaceSignature) {
+    return;
+  }
+  state.lastProfileWorkspaceSignature = workspaceSignature;
 
   if (!state.user) {
     els.profileWorkspaceSummary.innerHTML = '<div class="empty-state">Sign in to open your profile editor and review field readiness.</div>';
@@ -1083,6 +1149,17 @@ function renderDataControlsSection() {
   if (!isDesktopWorkspace || !els.dataPresenceSummary) {
     return;
   }
+  const dataControlsSignature = JSON.stringify({
+    userId: state.user?.id || '',
+    domain: state.tabInfo?.domain || '',
+    privacy: state.privacy,
+    profile: state.profile || null,
+    presenceNote: state.presenceAvailability?.note || ''
+  });
+  if (state.lastDataControlsSignature === dataControlsSignature) {
+    return;
+  }
+  state.lastDataControlsSignature = dataControlsSignature;
 
   const retentionLabel = normalizeRetentionSelection(`${state.privacy.retentionValue}|${state.privacy.retentionUnit}`).displayLabel || `${state.privacy.retentionValue} ${state.privacy.retentionUnit}`;
 
@@ -1936,27 +2013,24 @@ function renderLearningModulesSection() {
   renderLearningModulesStatus();
   const status = getLearningModulesStatus();
 
+  let markup = '';
   if (state.learningModulesLoading && !state.learningModules.length) {
-    els.learningModulesList.innerHTML = '<div class="empty-state">Loading learning modules…</div>';
-    return;
+    markup = '<div class="empty-state">Loading learning modules…</div>';
+  } else if (state.learningModulesError && !state.learningModules.length) {
+    markup = `<div class="empty-state">${escapeHtml(state.learningModulesError)}</div>`;
+  } else if (!state.learningModules.length) {
+    markup = '<div class="empty-state">No learning modules are available yet.</div>';
+  } else if (state.activeLearningView === 'modulePlayer' && state.activeModuleId) {
+    markup = renderLearningModulePlayer();
+  } else {
+    markup = state.learningModules.map((module) => renderLearningModuleCard(module, status)).join('');
   }
 
-  if (state.learningModulesError && !state.learningModules.length) {
-    els.learningModulesList.innerHTML = `<div class="empty-state">${escapeHtml(state.learningModulesError)}</div>`;
+  if (state.lastLearningModulesListSignature === markup) {
     return;
   }
-
-  if (!state.learningModules.length) {
-    els.learningModulesList.innerHTML = '<div class="empty-state">No learning modules are available yet.</div>';
-    return;
-  }
-
-  if (state.activeLearningView === 'modulePlayer' && state.activeModuleId) {
-    els.learningModulesList.innerHTML = renderLearningModulePlayer();
-    return;
-  }
-
-  els.learningModulesList.innerHTML = state.learningModules.map((module) => renderLearningModuleCard(module, status)).join('');
+  state.lastLearningModulesListSignature = markup;
+  els.learningModulesList.innerHTML = markup;
 }
 
 async function loadLearningModules({ force = false } = {}) {
@@ -2395,12 +2469,28 @@ function setActiveDesktopSection(sectionId, { openDrawer = false } = {}) {
 }
 
 function renderTopSites() {
+  const currentScope = getCurrentSiteScope();
+  const signature = JSON.stringify({
+    userId: state.user?.id || '',
+    currentDomain: currentScope?.domain || '',
+    sites: state.topSites.map((site) => ({
+      domain: site.domain,
+      active: site.active_user_count,
+      title: site.page_title || '',
+      url: site.full_url || site.trackedDisplayUrl || '',
+      lastSeen: site.last_seen
+    }))
+  });
+  if (state.lastTopSitesSignature === signature) {
+    return;
+  }
+  state.lastTopSitesSignature = signature;
+
   if (!state.user || !state.topSites.length) {
     els.topSitesList.innerHTML = '<div class="empty-state">No ranked sites are available yet. Users must opt into presence sharing before sites appear here.</div>';
     return;
   }
 
-  const currentScope = getCurrentSiteScope();
   els.topSitesList.innerHTML = state.topSites
     .map((site) => {
       const matchesCurrentSite = currentScope?.domain && currentScope.domain === site.domain;
@@ -2554,35 +2644,42 @@ async function openTopSiteDetail(domain, { force = false } = {}) {
 async function renderActiveUsers({ refreshVersion = state.refreshVersion, force = false } = {}) {
   updatePresenceAvailability();
   const requestId = ++state.activeUsersRequestId;
+  const setActiveUsersMarkup = (nextMarkup) => {
+    if (state.lastActiveUsersSignature === nextMarkup) {
+      return;
+    }
+    state.lastActiveUsersSignature = nextMarkup;
+    els.activeUsersList.innerHTML = nextMarkup;
+  };
 
   if (!state.tabInfo?.domain) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Open a website to view live activity on the current domain.</div>';
+    setActiveUsersMarkup('<div class="empty-state">Open a website to view live activity on the current domain.</div>');
     return;
   }
 
   if (!state.user) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Sign in to use Connect.Me on this site.</div>';
+    setActiveUsersMarkup('<div class="empty-state">Sign in to use Connect.Me on this site.</div>');
     return;
   }
 
   if (!state.presenceAvailability.consentSaved) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Save consent preferences before any presence data is shown.</div>';
+    setActiveUsersMarkup('<div class="empty-state">Save consent preferences before any presence data is shown.</div>');
     return;
   }
 
   if (!state.presenceAvailability.profileComplete) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Complete your full profile to use presence and community features.</div>';
+    setActiveUsersMarkup('<div class="empty-state">Complete your full profile to use presence and community features.</div>');
     return;
   }
 
   if (!state.presenceAvailability.canViewPresenceData) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Turn on presence sharing and turn off Invisible Mode to see other active users here.</div>';
+    setActiveUsersMarkup('<div class="empty-state">Turn on presence sharing and turn off Invisible Mode to see other active users here.</div>');
     return;
   }
 
   const cachedUsers = !force ? getCacheEntry(state.caches.activeUsers, state.tabInfo.domain, FETCH_TTL_MS.activeUsers) : null;
   if (!cachedUsers) {
-    els.activeUsersList.innerHTML = '<div class="empty-state">Refreshing live members…</div>';
+    setActiveUsersMarkup('<div class="empty-state">Refreshing live members…</div>');
   }
 
   try {
@@ -2592,15 +2689,15 @@ async function renderActiveUsers({ refreshVersion = state.refreshVersion, force 
     }
 
     const others = (users || []).filter((user) => user.id !== state.user?.id);
-    els.activeUsersList.innerHTML = others.length
+    setActiveUsersMarkup(others.length
       ? others.map(renderUserCard).join('')
-      : '<div class="empty-state">No other active users are visible on this site right now.</div>';
+      : '<div class="empty-state">No other active users are visible on this site right now.</div>');
   } catch (error) {
     if (requestId !== state.activeUsersRequestId || isStaleRefresh(refreshVersion)) {
       return;
     }
 
-    els.activeUsersList.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    setActiveUsersMarkup(`<div class="empty-state">${escapeHtml(error.message)}</div>`);
   }
 }
 
@@ -2717,7 +2814,14 @@ async function refreshState({ reason = 'manual', force = false } = {}) {
   renderPresenceControls();
   renderCurrentSiteUrlSummary();
   renderDesktopWorkspace();
-  await loadLearningModules({ force });
+  const shouldRefreshLearningModules = force
+    || !state.learningModulesInitialized
+    || state.lastLearningModulesUserId !== (state.user?.id || '');
+  if (shouldRefreshLearningModules) {
+    await loadLearningModules({ force });
+    state.learningModulesInitialized = true;
+    state.lastLearningModulesUserId = state.user?.id || '';
+  }
   await renderActiveUsers({ refreshVersion, force });
   await loadTopSites({ reason, refreshVersion, force });
 
@@ -2737,8 +2841,10 @@ async function refreshContextState({ reason = 'context-sync', force = false } = 
   }
   renderDomainBadge();
   renderCurrentSiteUrlSummary();
-  renderTopSites();
-  renderDesktopWorkspace();
+  if (force || previousDomain !== nextDomain) {
+    renderTopSites();
+    renderDesktopWorkspace();
+  }
   await renderActiveUsers({ refreshVersion, force: force || previousDomain !== nextDomain });
   if (state.detailDomain && (force || state.detailDomain === nextDomain || previousDomain !== nextDomain)) {
     await openTopSiteDetail(state.detailDomain, { force });
@@ -3051,6 +3157,9 @@ function stopTopSitesPolling() {
 }
 
 function startTopSitesPolling() {
+  if (isDesktopWorkspace) {
+    return;
+  }
   stopTopSitesPolling();
   state.topSitesPollId = window.setInterval(() => {
     if (document.hidden || !state.user) {
@@ -3066,7 +3175,11 @@ function startTopSitesPolling() {
 function handleRuntimeMessage(message) {
   if (message?.type === 'ACTIVE_CONTEXT_CHANGED') {
     logStructured('log', `[Connect.Me] ${WORKSPACE_LABEL} current-site event`, message);
-    scheduleRefresh({ reason: message.reason || 'background-event', scope: 'context', force: true }).catch((error) => {
+    const nextContext = normalizeContextToTabInfo(message?.context || null);
+    const domainChanged = (nextContext?.domain || '') !== (state.tabInfo?.domain || '');
+    const pathChanged = (nextContext?.path || '') !== (state.tabInfo?.path || '');
+    const shouldForce = domainChanged || pathChanged || message?.reason === 'startup' || message?.reason === 'domain-updated';
+    scheduleRefresh({ reason: message.reason || 'background-event', scope: 'context', force: shouldForce }).catch((error) => {
       logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} refresh failed`, { reason: message.reason, message: error.message });
     });
     return;
@@ -3100,22 +3213,24 @@ function bindRuntimeListeners() {
   chrome.runtime.onMessage.addListener(handleRuntimeMessage);
   chrome.storage.onChanged.addListener(handleStorageChange);
   window.addEventListener('focus', () => {
-    scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-focus' : 'popup-focus' }).catch((error) => {
+    scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-focus' : 'popup-focus', scope: 'context' }).catch((error) => {
       logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} focus refresh failed`, { message: error.message });
     });
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
-      scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-visible' : 'popup-visible' }).catch((error) => {
+      scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-visible' : 'popup-visible', scope: 'context' }).catch((error) => {
         logStructured('error', `[Connect.Me] ${WORKSPACE_LABEL} visibility refresh failed`, { message: error.message });
       });
     }
   });
-  state.contextRefreshId = window.setInterval(() => {
-    scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-fallback-refresh' : 'popup-fallback-refresh', scope: 'context' }).catch((error) => {
-      logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} fallback refresh missed`, { message: error.message });
-    });
-  }, CONTEXT_FALLBACK_REFRESH_MS);
+  if (!isDesktopWorkspace) {
+    state.contextRefreshId = window.setInterval(() => {
+      scheduleRefresh({ reason: isDesktopWorkspace ? 'desktop-fallback-refresh' : 'popup-fallback-refresh', scope: 'context' }).catch((error) => {
+        logStructured('warn', `[Connect.Me] ${WORKSPACE_LABEL} fallback refresh missed`, { message: error.message });
+      });
+    }, CONTEXT_FALLBACK_REFRESH_MS);
+  }
   window.addEventListener('beforeunload', () => {
     stopTopSitesPolling();
     if (state.contextRefreshId) {
