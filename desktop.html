@@ -10,8 +10,8 @@
   </head>
   <body class="page-body desktop-body light-theme app-initializing">
     <div id="appBootstrapState" class="app-bootstrap-state" aria-live="polite">Loading workspace…</div>
-    <main class="dashboard-shell desktop-dashboard app-shell live-workspace-shell">
-      <aside id="workspaceNav" class="workspace-nav-shell live-foldout-sidebar is-collapsed" aria-label="Workspace navigation">
+    <main class="dashboard-shell desktop-dashboard app-shell">
+      <aside id="workspaceNav" class="workspace-nav-shell is-collapsed" aria-label="Workspace navigation">
         <div class="workspace-nav-top stack-md">
           <div class="workspace-nav-header">
             <img class="brand-logo brand-logo-rail" src="assets/branding/connectme-logo.svg" alt="Connect.Me logo" />
@@ -97,7 +97,7 @@
           </nav>
         </div>
 
-        <div class="workspace-nav-bottom live-workspace-bottom">
+        <div class="workspace-nav-bottom">
           <div class="workspace-presence-chip">
             <div class="rail-status-dot"></div>
             <span class="workspace-nav-label">Workspace online</span>
@@ -106,10 +106,10 @@
         </div>
       </aside>
 
-      <section class="workspace-main workspace-main-shell live-workspace-main">
+      <section class="workspace-main workspace-main-shell">
         <section id="statusBanner" class="status-banner hidden" aria-live="polite"></section>
 
-        <section class="overview-metrics workspace-main-metrics workspace-kpi-row">
+        <section class="overview-metrics workspace-main-metrics">
           <article class="metric-card">
             <span class="metric-label">Workspace mode</span>
             <span class="metric-value">Desktop</span>
@@ -127,7 +127,7 @@
           </article>
         </section>
 
-        <div class="workspace-main-stack live-workspace-stack">
+        <div class="workspace-main-stack">
           <section id="authPanel" class="workspace-card hidden workspace-utility-panel">
             <div class="section-heading">
               <div>
@@ -268,7 +268,7 @@
                 </div>
                 <span id="learningModulesStatusBadge" class="badge success status-pill">Supabase synced</span>
               </div>
-              <div id="learningModulesStatusCallout" class="callout subtle">Module cards mirror the desktop learning workspace design: cleaner hierarchy, structured topic previews, and polished connection badges.</div>
+              <div id="learningModulesStatusCallout" class="callout subtle">Learning modules are visible to everyone in the workspace. Connecting a module requires sign-in and only exposes safe public-facing user identity details.</div>
               <section class="surface-card stack-sm">
                 <h3>Learning Modules backend diagnostics</h3>
                 <div id="learningModulesBackendDiagnostics" class="info-grid">
