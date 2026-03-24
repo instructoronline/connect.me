@@ -254,6 +254,8 @@ on public.learning_module_connections
 for insert
 with check (auth.uid() = user_id);
 
+-- Fix: drop first so schema reruns stay idempotent when function signatures change.
+drop function if exists public.get_active_users_for_domain(text);
 create or replace function public.get_active_users_for_domain(requested_domain text)
 returns table (
   id uuid,
@@ -434,6 +436,7 @@ join public.learning_modules lm on lm.slug = st.module_slug
 on conflict (module_id, topic_title) do update
 set sort_order = excluded.sort_order;
 
+-- Fix: JSON card payloads keep escaped backslashes doubled so reruns do not hit invalid JSON escape errors.
 with seeded_cards as (
   select 'foundations-of-transformers'::text as module_slug, 'Why transformers changed sequence modeling'::text as topic_title, 'The core problem'::text as title, 'concept'::text as card_type, 1 as sort_order, '{"subtopic_title":"Long-range dependencies","sections":[{"label":"Short explanation","body":"Language, code, and multimodal tasks require a model to relate distant pieces of information."},{"label":"Example","body":"Pronouns, earlier assumptions, and prior code definitions often matter much later in the sequence."},{"label":"Key takeaway","body":"Transformers make long-range context lookup direct instead of forcing it through a narrow recurrent bottleneck."}]}'::jsonb as content
   union all select 'foundations-of-transformers', 'Why transformers changed sequence modeling', 'Why recurrence struggled', 'comparison', 2, '{"subtopic_title":"Sequential bottlenecks","sections":[{"label":"Short explanation","body":"RNNs and LSTMs process tokens one step at a time, which limits parallelism and makes long-range optimization harder."},{"label":"Pitfalls","body":"Important context can become diluted across many sequential updates."},{"label":"Connection to the broader problem","body":"Large modern AI systems benefit from architectures that scale efficiently across long sequences and large datasets."}]}'::jsonb
@@ -441,7 +444,7 @@ with seeded_cards as (
   union all select 'foundations-of-transformers', 'Tokens and embeddings', 'From text to tokens', 'concept', 1, '{"subtopic_title":"Tokenization","sections":[{"label":"Short explanation","body":"Text is split into reusable pieces such as words or subwords before entering the model."},{"label":"Example","body":"Rare words can be represented through combinations of known subword units."},{"label":"Pitfalls","body":"Tokenization choices affect efficiency, multilingual support, and how rare terms are represented."}]}'::jsonb
   union all select 'foundations-of-transformers', 'Tokens and embeddings', 'Embeddings create meaning-rich vectors', 'concept', 2, '{"subtopic_title":"Representation space","sections":[{"label":"Short explanation","body":"Each token id maps to a dense vector in a learned representation space."},{"label":"Formula","body":"x_i = E[t_i], where E is the embedding matrix."},{"label":"Key takeaway","body":"Embeddings convert discrete symbols into trainable numerical representations."}]}'::jsonb
   union all select 'foundations-of-transformers', 'Tokens and embeddings', 'Position still matters', 'concept', 3, '{"subtopic_title":"Ordering information","sections":[{"label":"Short explanation","body":"Positional information is added so the model can distinguish sequences that contain the same tokens in different orders."},{"label":"Example","body":"Positional encodings or learned position embeddings are combined with token embeddings."},{"label":"Connection to the broader problem","body":"Good sequence modeling requires both content and order."}]}'::jsonb
-  union all select 'foundations-of-transformers', 'Attention as the lesson engine', 'Self-attention basics', 'concept', 1, '{"subtopic_title":"Context weighting","sections":[{"label":"Short explanation","body":"Each token computes how much to focus on all other tokens in the sequence."},{"label":"Formula","body":"$$\\operatorname{Attn}(Q, K, V) = \\operatorname{softmax}\!\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\\right)V.$$"},{"label":"Intuition","body":"Queries ask what a token wants, keys advertise what tokens contain, and values provide the retrievable information."}]}'::jsonb
+  union all select 'foundations-of-transformers', 'Attention as the lesson engine', 'Self-attention basics', 'concept', 1, '{"subtopic_title":"Context weighting","sections":[{"label":"Short explanation","body":"Each token computes how much to focus on all other tokens in the sequence."},{"label":"Formula","body":"$$\\operatorname{Attn}(Q, K, V) = \\operatorname{softmax}\\!\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\\right)V.$$"},{"label":"Intuition","body":"Queries ask what a token wants, keys advertise what tokens contain, and values provide the retrievable information."}]}'::jsonb
   union all select 'foundations-of-transformers', 'Attention as the lesson engine', 'Why scaling and softmax appear', 'math', 2, '{"subtopic_title":"Stable scoring","sections":[{"label":"Short explanation","body":"Scaling by sqrt(d_k) keeps attention logits from becoming excessively large before softmax."},{"label":"Derivation","body":"Dot-product variance tends to grow with dimension, so the scaling factor counteracts that growth."},{"label":"Key takeaway","body":"The scaling term helps attention remain trainable and avoids overly sharp early distributions."}]}'::jsonb
   union all select 'foundations-of-transformers', 'Attention as the lesson engine', 'Why transformers generalize well', 'synthesis', 3, '{"subtopic_title":"Flexible context use","sections":[{"label":"Short explanation","body":"Transformers can recompute which context matters at every layer instead of relying on a fixed memory path."},{"label":"Visual description","body":"Across layers, the model redraws an importance map over the sequence."},{"label":"Connection to the broader problem","body":"This flexibility is one reason transformers became foundational across modalities."}]}'::jsonb
   union all select 'mathematical-foundations-of-transformers', 'Vectors, matrices, and similarity', 'Vectors as feature bundles', 'concept', 1, '{"subtopic_title":"Coordinate meaning","sections":[{"label":"Short explanation","body":"A vector is an ordered collection of features that can represent token meaning or activation state."},{"label":"Example","body":"An embedding vector can encode many learned semantic and syntactic factors simultaneously."},{"label":"Intuition","body":"Each dimension is a dial the network can use while comparing or combining concepts."}]}'::jsonb
@@ -500,6 +503,8 @@ $$;
 
 grant execute on function public.clear_my_presence() to authenticated;
 
+-- Fix: drop first so schema reruns stay idempotent when function signatures change.
+drop function if exists public.purge_expired_history();
 create or replace function public.purge_expired_history()
 returns void
 language sql
@@ -512,6 +517,8 @@ $$;
 
 grant execute on function public.purge_expired_history() to anon, authenticated;
 
+-- Fix: drop first so schema reruns stay idempotent when function signatures change.
+drop function if exists public.delete_my_account_completely();
 create or replace function public.delete_my_account_completely()
 returns void
 language plpgsql

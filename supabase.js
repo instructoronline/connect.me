@@ -1691,6 +1691,7 @@ export async function fetchLearningModules() {
 
 export async function diagnoseLearningModulesBackend({ moduleSlug = 'foundations-of-transformers' } = {}) {
   const checks = [];
+  const user = await getCurrentUser().catch(() => null);
   const runCheck = async ({ key, label, requiredFor, execute }) => {
     try {
       await execute();
@@ -1741,18 +1742,29 @@ export async function diagnoseLearningModulesBackend({ moduleSlug = 'foundations
     execute: () => publicRestRequest('learning_module_cards', { query: '?select=id,topic_id&limit=1' })
   });
 
-  await runCheck({
-    key: 'get_learning_module_connected_users_rpc',
-    label: 'Execute public.get_learning_module_connected_users(text)',
-    requiredFor: '"Show all users connected" live data',
-    execute: () => publicRestRequest('get_learning_module_connected_users', {
-      method: 'POST',
-      rpc: true,
-      body: { requested_module_slug: moduleSlug }
-    })
-  });
+  if (user) {
+    // Fix: run the connected-users RPC check only after auth is ready, preventing false negatives for signed-out startup.
+    await runCheck({
+      key: 'get_learning_module_connected_users_rpc',
+      label: 'Execute public.get_learning_module_connected_users(text)',
+      requiredFor: '"Show all users connected" live data',
+      execute: () => publicRestRequest('get_learning_module_connected_users', {
+        method: 'POST',
+        rpc: true,
+        body: { requested_module_slug: moduleSlug }
+      })
+    });
+  } else {
+    checks.push({
+      key: 'get_learning_module_connected_users_rpc',
+      label: 'Execute public.get_learning_module_connected_users(text)',
+      requiredFor: '"Show all users connected" live data',
+      ok: false,
+      status: 'skipped',
+      message: 'Skipped because no signed-in user session is available.'
+    });
+  }
 
-  const user = await getCurrentUser().catch(() => null);
   if (user) {
     await runCheck({
       key: 'learning_module_connections_select_authenticated',

@@ -154,6 +154,7 @@ const state = {
   lastTopSitesSignature: '',
   lastPresenceSignature: '',
   lastProfileSummarySignature: '',
+  lastLearningModulesStatusSignature: '',
   profileDrawerOpen: false,
   isNavExpanded: false,
   activeSection: 'currentSiteTab',
@@ -165,6 +166,7 @@ const isDesktopWorkspace = document.body.classList.contains('desktop-body');
 const ACTIVE_CONTEXT_STORAGE_KEY = 'connectme-active-context';
 const CONTEXT_FALLBACK_REFRESH_MS = isDesktopWorkspace ? 12000 : 15000;
 const WORKSPACE_LABEL = isDesktopWorkspace ? 'Desktop' : 'Popup';
+const APP_INITIALIZING_CLASS = 'app-initializing';
 
 const SHARED_CARD_DEBUG_ENABLED = false;
 const FETCH_TTL_MS = {
@@ -181,6 +183,11 @@ const DESKTOP_NAV_WIDTH = {
 };
 
 const learningModuleFlatCardCache = new Map();
+
+function setUiInitializationState(isReady) {
+  // Fix: keep desktop shell hidden until async auth/state hydration finishes to prevent login-state flicker.
+  document.body.classList.toggle(APP_INITIALIZING_CLASS, !isReady);
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -1163,6 +1170,20 @@ function clearLearningModulesLiveFailure() {
 
 function renderLearningModulesStatus() {
   const status = getLearningModulesStatus();
+  const statusSignature = JSON.stringify({
+    badge: status.statusBadge || '',
+    tone: status.statusTone || '',
+    message: status.statusMessage || '',
+    detail: status.fallbackDetail || '',
+    setupRequired: Boolean(status.setupRequired),
+    persistenceAvailable: Boolean(status.persistenceAvailable)
+  });
+  // Fix: avoid flicker by skipping redundant status DOM writes when poll cycles do not change backend state.
+  if (state.lastLearningModulesStatusSignature === statusSignature) {
+    renderLearningModuleBackendDiagnostics();
+    return;
+  }
+  state.lastLearningModulesStatusSignature = statusSignature;
 
   if (els.learningModulesStatusBadge) {
     els.learningModulesStatusBadge.textContent = status.statusBadge || 'Supabase synced';
@@ -1226,6 +1247,8 @@ function renderLearningModuleBackendDiagnostics() {
   const moduleStatus = getLearningModulesStatus();
   const summaryTone = moduleStatus.backendState === 'live_ready'
     ? 'success'
+    : moduleStatus.backendState === 'auth_pending'
+      ? 'warning'
     : moduleStatus.backendState === 'unavailable'
       ? 'error'
       : moduleStatus.backendState === 'degraded'
@@ -1235,6 +1258,8 @@ function renderLearningModuleBackendDiagnostics() {
         : 'warning';
   const summaryText = moduleStatus.backendState === 'live_ready'
     ? 'Sync backend ready'
+    : moduleStatus.backendState === 'auth_pending'
+      ? 'Awaiting sign-in'
     : moduleStatus.backendState === 'booting' || moduleStatus.backendState === 'loading_content' || moduleStatus.backendState === 'reconciling_live_rows'
       ? 'Reconciling'
       : moduleStatus.backendState === 'degraded' && moduleStatus.setupRequired
@@ -1256,6 +1281,35 @@ function renderLearningModuleBackendDiagnostics() {
 async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning-modules' } = {}) {
   if (!isDesktopWorkspace) {
     return null;
+  }
+
+  if (!state.user) {
+    // Fix: do not mark backend unavailable before login; auth-gated diagnostics are intentionally deferred.
+    state.learningModuleBackendDiagnostics = {
+      checkedAt: new Date().toISOString(),
+      reason,
+      persistenceAvailable: true,
+      setupRequired: false,
+      failingRequirement: '',
+      summary: 'Waiting for sign-in before running authenticated Learning Modules checks.',
+      checks: [
+        {
+          key: 'learning_modules_auth_gate',
+          label: 'Learning Modules backend diagnostics',
+          requiredFor: 'Root cause detection',
+          ok: true,
+          status: 'skipped',
+          message: 'Skipped until a signed-in user session is available.'
+        }
+      ]
+    };
+    state.learningModulesStatus = {
+      ...getLearningModulesStatus(),
+      backendState: 'auth_pending'
+    };
+    renderLearningModulesSection();
+    renderLearningModuleBackendDiagnostics();
+    return state.learningModuleBackendDiagnostics;
   }
 
   try {
@@ -1300,9 +1354,10 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
         }
       ]
     };
+    // Fix: classify diagnostics errors as degraded so transient init/network failures do not pin the UI as unavailable.
     state.learningModulesStatus = {
       ...getLearningModulesStatus(),
-      backendState: 'unavailable'
+      backendState: 'degraded'
     };
   }
 
@@ -3499,6 +3554,7 @@ async function bindEvents() {
 }
 
 async function initialize() {
+  setUiInitializationState(false);
   enforcePopupWidth();
   bindElements();
   renderPrivacyTab();
@@ -3529,9 +3585,11 @@ async function initialize() {
     setActiveDesktopSection(state.activeSection);
   }
   await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened', force: true });
+  setUiInitializationState(true);
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
 
 initialize().catch((error) => {
+  setUiInitializationState(true);
   setStatus(error.message, 'error');
 });

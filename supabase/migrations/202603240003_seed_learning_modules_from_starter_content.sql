@@ -95,6 +95,7 @@ with seed_payload as (
     sections jsonb
   )
 ), deduplicated as (
+  -- Fix: deduplicate by (topic_id, sort_order) so ON CONFLICT never sees the same row twice in one statement.
   select distinct on (topic_id, sort_order)
     module_id, topic_id, title, card_type, sort_order, content
   from card_rows
