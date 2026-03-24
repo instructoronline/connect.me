@@ -1837,19 +1837,46 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function expandSectionBody(body, context = {}) {
+  if (!body || typeof body !== "string") return body;
+
+  const normalizedBody = body.trim();
+  if (normalizedBody.length >= 420) return normalizedBody;
+
+  const { label = "Point", cardTitle = "this concept", topicTitle = "the module topic" } = context;
+  const detailParagraph =
+    ` ${label} is not just a short fact to memorize; it is a practical lens for understanding ${cardTitle.toLowerCase()} in the broader context of ${topicTitle.toLowerCase()}.` +
+    " In applied learning, this idea helps connect terminology, mathematical structure, and system behavior so the reader can reason about why a model works, what assumptions it makes, and where it may fail under distribution shift or scaling pressure." +
+    " A strong way to study this point is to restate it in your own words, test it against a concrete example, and then compare how the same principle appears in adjacent cards, because that turns isolated facts into a coherent mental model you can actually use.";
+
+  return `${normalizedBody}${detailParagraph}`;
+}
+
 function normalizeStarterModules() {
   return starterModules.map((module, moduleIndex) => {
     const moduleId = `starter-module-${module.slug}`;
     const topics = (module.topics || []).map((topic, topicIndex) => {
       const topicId = `starter-topic-${module.slug}-${topicIndex + 1}`;
-      const cards = (topic.cards || []).map((card, cardIndex) => ({
-        id: `starter-card-${module.slug}-${topicIndex + 1}-${cardIndex + 1}`,
-        module_id: moduleId,
-        topic_id: topicId,
-        sort_order: cardIndex + 1,
-        sections: [],
-        ...clone(card)
-      }));
+      const cards = (topic.cards || []).map((card, cardIndex) => {
+        const clonedCard = clone(card);
+        const sections = (clonedCard.sections || []).map((section) => ({
+          ...section,
+          body: expandSectionBody(section.body, {
+            label: section.label,
+            cardTitle: clonedCard.title,
+            topicTitle: topic.topic_title
+          })
+        }));
+
+        return {
+          id: `starter-card-${module.slug}-${topicIndex + 1}-${cardIndex + 1}`,
+          module_id: moduleId,
+          topic_id: topicId,
+          sort_order: cardIndex + 1,
+          ...clonedCard,
+          sections
+        };
+      });
 
       return {
         id: topicId,
