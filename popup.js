@@ -1931,8 +1931,29 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   state.moduleConnectionIds.add(moduleId);
   rerenderLearningModuleCard(moduleId);
 
+  const connectAttemptDiagnostics = {
+    userIdPresent: Boolean(state.user?.id),
+    moduleIdPresent: Boolean(moduleId),
+    liveSyncAvailable: Boolean(getLearningModulesStatus().persistenceAvailable),
+    attemptedSupabaseInsert: false,
+    insertResult: 'not_attempted',
+    fallbackQueueBranchTaken: false
+  };
+  logStructured('log', '[Connect.Me] Learning module connect attempt', {
+    moduleId,
+    moduleSlug,
+    ...connectAttemptDiagnostics
+  });
+
   try {
     const result = await connectCurrentUserToLearningModule(moduleId, { moduleSlug });
+    logStructured('log', '[Connect.Me] Learning module connect result', {
+      moduleId,
+      moduleSlug,
+      ...(result?.diagnostics || connectAttemptDiagnostics),
+      queued: Boolean(result?.queued),
+      status: result?.status || ''
+    });
     if (result?.queued) {
       state.pendingLocalModuleConnectionIds.add(moduleId);
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-queued' });
@@ -1953,13 +1974,18 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       setStatus('You are now connected to this learning module.', 'success');
 
       await loadLearningModules({ force: false });
+      await loadLearningModuleUsers(moduleSlug, { force: true });
 
-      if (state.expandedLearningModuleUsers.has(moduleSlug)) {
-        await loadLearningModuleUsers(moduleSlug, { force: true });
-      }
     }
   } catch (error) {
     state.moduleConnectionIds.delete(moduleId);
+    logStructured('error', '[Connect.Me] Learning module connect failed', {
+      moduleId,
+      moduleSlug,
+      ...(error?.learningModuleConnectDiagnostics || connectAttemptDiagnostics),
+      insertResult: 'error',
+      error: error?.message || 'Unknown error'
+    });
     await refreshLearningModuleBackendDiagnostics({ reason: 'connect-error' });
     if (!state.pendingLocalModuleConnectionIds.has(moduleId)) {
       setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
