@@ -221,6 +221,13 @@ function resolveLearningModuleUuid(moduleId = '', moduleSlug = '') {
   };
 }
 
+function hasLiveUuidForEveryRenderedModule(modules = []) {
+  if (!Array.isArray(modules) || !modules.length) {
+    return false;
+  }
+  return modules.every((module) => isUuidLike(module?.db_id || module?.id));
+}
+
 function formatActiveUserLabel(count) {
   const safeCount = Number(count) || 0;
   return `${safeCount} active user${safeCount === 1 ? '' : 's'}`;
@@ -1888,7 +1895,9 @@ async function loadLearningModules({ force = false } = {}) {
   try {
     const canReuseCachedModules = !force
       && state.learningModules.length
-      && getLearningModulesStatus().persistenceAvailable;
+      && getLearningModulesStatus().persistenceAvailable
+      && state.learningModulesStatus?.source !== 'fallback'
+      && hasLiveUuidForEveryRenderedModule(state.learningModules);
 
     const modulePayload = canReuseCachedModules
       ? { modules: state.learningModules, ...getLearningModulesStatus() }
@@ -1899,6 +1908,29 @@ async function loadLearningModules({ force = false } = {}) {
       ...getLearningModulesStatus(),
       ...(modulePayload || {})
     };
+
+    if (modulePayload?.persistenceAvailable && modulePayload?.source !== 'fallback') {
+      clearLearningModulesLiveFailure();
+      setLearningModulesSyncedStatus({
+        badge: modulePayload?.statusBadge || 'Supabase synced',
+        message: modulePayload?.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
+      });
+    }
+
+    logStructured('log', '[Connect.Me] Learning modules payload diagnostics', {
+      source: modulePayload?.source || 'unknown',
+      fetchedLiveModulesCount: (modulePayload?.reconciliationDiagnostics || []).length || state.learningModules.length,
+      liveUuidBySlug: (modulePayload?.reconciliationDiagnostics || state.learningModules || []).map((entry) => ({
+        slug: entry?.slug || '',
+        liveUuidFound: entry?.liveUuidFound !== undefined
+          ? (entry.liveUuidFound ? 'yes' : 'no')
+          : (isUuidLike(entry?.db_id || entry?.id) ? 'yes' : 'no'),
+        reconciledToLiveRow: entry?.reconciledWithStarter !== undefined
+          ? (entry.reconciledWithStarter ? 'yes' : 'no')
+          : 'unknown'
+      }))
+    });
+
     await refreshLearningModuleBackendDiagnostics({ reason: 'module-payload-load' });
     if (state.activeModuleId && !state.learningModules.some((module) => module.id === state.activeModuleId)) {
       state.activeLearningView = 'moduleList';
