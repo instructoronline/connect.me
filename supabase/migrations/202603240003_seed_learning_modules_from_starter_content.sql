@@ -94,10 +94,15 @@ with seed_payload as (
     sort_order integer,
     sections jsonb
   )
+), deduplicated as (
+  select distinct on (topic_id, sort_order)
+    module_id, topic_id, title, card_type, sort_order, content
+  from card_rows
+  order by topic_id, sort_order
 )
 insert into public.learning_module_cards (module_id, topic_id, title, card_type, sort_order, content)
 select module_id, topic_id, title, card_type, sort_order, content
-from card_rows
+from deduplicated
 on conflict (topic_id, sort_order) do update
 set title = excluded.title,
     card_type = excluded.card_type,
