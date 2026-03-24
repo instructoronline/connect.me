@@ -39,6 +39,49 @@ function wrapMath(inner, displayMode = false) {
   return `<math xmlns="http://www.w3.org/1998/Math/MathML" display="${displayMode ? 'block' : 'inline'}"><mrow>${inner || '<mrow></mrow>'}</mrow></math>`;
 }
 
+function hasKatexRenderer() {
+  return typeof globalThis !== 'undefined'
+    && globalThis.katex
+    && typeof globalThis.katex.renderToString === 'function';
+}
+
+function normalizeFormulaToLatex(expression = '') {
+  return String(expression || '')
+    .replaceAll('Attention(Q,K,V)', '\\mathrm{Attention}(Q,K,V)')
+    .replaceAll('Attn(X)', '\\mathrm{Attn}(X)')
+    .replaceAll('softmax', '\\mathrm{softmax}')
+    .replaceAll('sqrt(d_k)', '\\sqrt{d_k}')
+    .replaceAll('QK^T', 'QK^{\\top}')
+    .replaceAll('q_i^T', 'q_i^{\\top}')
+    .replaceAll('Σ_j', '\\sum_j')
+    .replaceAll('Σ', '\\sum')
+    .replaceAll('alpha_ij', '\\alpha_{ij}')
+    .replaceAll('theta', '\\theta')
+    .replaceAll('η', '\\eta')
+    .replaceAll('∇', '\\nabla')
+    .replaceAll('γ', '\\gamma')
+    .replaceAll('μ', '\\mu')
+    .replaceAll('σ', '\\sigma')
+    .replaceAll('ε', '\\varepsilon')
+    .replaceAll('->', '\\to ');
+}
+
+function renderKaTeX(expression = '', { displayMode = false } = {}) {
+  if (!hasKatexRenderer()) {
+    return null;
+  }
+  try {
+    return globalThis.katex.renderToString(normalizeFormulaToLatex(expression), {
+      throwOnError: false,
+      displayMode,
+      strict: 'ignore',
+      output: 'html'
+    });
+  } catch (_error) {
+    return null;
+  }
+}
+
 class LatexToMathMLParser {
   constructor(source = '') {
     this.source = String(source || '').trim();
@@ -389,10 +432,32 @@ export function renderMathToMarkup(expression = '', { displayMode = false } = {}
     return mathMarkupCache.get(key);
   }
 
-  const parser = new LatexToMathMLParser(expression);
+  const katexMarkup = renderKaTeX(expression, { displayMode });
+  if (katexMarkup) {
+    mathMarkupCache.set(key, katexMarkup);
+    return katexMarkup;
+  }
+
+  const parser = new LatexToMathMLParser(normalizeFormulaToLatex(expression));
   const markup = parser.parse(displayMode);
   mathMarkupCache.set(key, markup);
   return markup;
+}
+
+function isLikelyMathExpression(content = '') {
+  const value = String(content || '').trim();
+  if (!value) {
+    return false;
+  }
+  return /[=^_\\]|sqrt|softmax|Attention|Attn|sum|prod|frac|[α-ωΑ-ΩΣθμσγερη∇]/i.test(value);
+}
+
+export function InlineMath(expression = '') {
+  return `<span class="math-inline-shell math-inline-katex">${renderMathToMarkup(expression, { displayMode: false })}</span>`;
+}
+
+export function BlockMath(expression = '') {
+  return `<div class="math-block-shell math-block-katex">${renderMathToMarkup(expression, { displayMode: true })}</div>`;
 }
 
 function renderInlineSegments(text = '') {
@@ -408,7 +473,7 @@ function renderInlineSegments(text = '') {
     }
 
     const expression = match[0].slice(1, -1).trim();
-    fragments.push(`<span class="math-inline-shell">${renderMathToMarkup(expression, { displayMode: false })}</span>`);
+    fragments.push(InlineMath(expression));
     lastIndex = match.index + match[0].length;
     match = pattern.exec(source);
   }
@@ -422,7 +487,7 @@ function renderInlineSegments(text = '') {
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
-export function renderRichText(text = '') {
+export function MathContentRenderer(text = '') {
   const source = String(text || '').trim();
   if (!source) {
     return '<p></p>';
@@ -444,14 +509,24 @@ export function renderRichText(text = '') {
     }
 
     const parts = trimmed.split(/(\$\$[\s\S]+?\$\$)/g).filter(Boolean);
-    return parts.map((part) => {
+    const rendered = parts.map((part) => {
       if (/^\$\$[\s\S]+\$\$$/.test(part)) {
-        return `<div class="math-block-shell">${renderMathToMarkup(part.slice(2, -2).trim(), { displayMode: true })}</div>`;
+        return BlockMath(part.slice(2, -2).trim());
       }
       return `<p>${part.split('\n').map((line) => renderInlineSegments(line)).join('<br />')}</p>`;
     }).join('');
+
+    if (parts.length === 1 && isLikelyMathExpression(trimmed) && !trimmed.includes('$')) {
+      return BlockMath(trimmed);
+    }
+
+    return rendered;
   }).join('');
 
   richTextCache.set(source, html);
   return html;
+}
+
+export function renderRichText(text = '') {
+  return MathContentRenderer(text);
 }

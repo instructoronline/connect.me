@@ -16,9 +16,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'fnd-seq-modeling',
         title: 'Sequence modeling shift',
         simple_explanation: 'Transformers replaced recurrence with direct context lookup across a sequence.',
-        formal_explanation: 'Given token embeddings X, self-attention computes token-to-token relevance with softmax(QK^T / sqrt(d_k)) and mixes V accordingly.',
+        formal_explanation: 'Given token embeddings $X$, self-attention computes token-to-token relevance with $\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)$ and mixes $V$ accordingly.',
         visual_intuition: 'Each token looks at a relevance heatmap over all tokens, then blends the most useful context.',
-        formulas: ['Attn(X) = softmax(QK^T / sqrt(d_k))V', 'Q = XW_Q, K = XW_K, V = XW_V'],
+        formulas: ['\\mathrm{Attn}(X)=\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)V', 'Q=XW_Q,\\;K=XW_K,\\;V=XW_V'],
         usage_in_transformers: 'Used in every encoder and decoder stack to model contextual dependencies.',
         related_concepts: ['fnd-attention', 'fnd-embeddings'],
         prerequisites: ['fnd-embeddings'],
@@ -32,7 +32,7 @@ const COLLABORATIVE_BLUEPRINTS = [
         },
         tasks: [
           { id: 'fnd-seq-fill-expl', type: 'fill_explanation', prompt: 'Complete: Transformers are effective for long context because they ______ instead of passing one hidden state through every step.' },
-          { id: 'fnd-seq-fill-formula', type: 'fill_formula', prompt: 'Fill the missing term: softmax(QK^T / ____ )V' },
+          { id: 'fnd-seq-fill-formula', type: 'fill_formula', prompt: 'Fill the missing term: $\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\;\\underline{\\qquad}\\;}\\right)V$' },
           { id: 'fnd-seq-why-matters', type: 'why_matters', prompt: 'Explain in 1-2 lines why this shift changed practical model scaling.' }
         ]
       },
@@ -40,9 +40,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'fnd-attention',
         title: 'Attention as retrieval',
         simple_explanation: 'Attention lets a token retrieve useful context from other tokens.',
-        formal_explanation: 'Scores s_ij = q_i^T k_j are normalized to alpha_ij, then output o_i = Σ alpha_ij v_j.',
+        formal_explanation: 'Scores $s_{ij}=\\frac{q_i^{\\top}k_j}{\\sqrt{d_k}}$ are normalized to $\\alpha_{ij}$, then output $o_i=\\sum_j \\alpha_{ij} v_j$.',
         visual_intuition: 'Imagine each token sending a query through a searchable memory table of keys and values.',
-        formulas: ['s_ij = q_i^T k_j / sqrt(d_k)', 'o_i = Σ_j alpha_ij v_j'],
+        formulas: ['s_{ij}=\\frac{q_i^{\\top}k_j}{\\sqrt{d_k}}', 'o_i=\\sum_j \\alpha_{ij} v_j'],
         usage_in_transformers: 'Core mechanism used for self-attention and cross-attention.',
         related_concepts: ['fnd-seq-modeling', 'fnd-positional-encoding'],
         prerequisites: ['fnd-seq-modeling'],
@@ -88,9 +88,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'fnd-positional-encoding',
         title: 'Positional encodings',
         simple_explanation: 'Positional signals inject order information into token representations.',
-        formal_explanation: 'Sinusoidal encodings use frequencies PE(pos, 2i) = sin(pos / 10000^(2i/d_model)).',
+        formal_explanation: 'Sinusoidal encodings use frequencies $\\mathrm{PE}(pos,2i)=\\sin\\!\\left(\\frac{pos}{10000^{2i/d_{\\mathrm{model}}}}\\right)$.',
         visual_intuition: 'Each position gets a unique, smooth waveform signature the model can compare.',
-        formulas: ['PE(pos, 2i)=sin(pos/10000^(2i/d_model))', 'PE(pos, 2i+1)=cos(pos/10000^(2i/d_model))'],
+        formulas: ['\\mathrm{PE}(pos,2i)=\\sin\\!\\left(\\frac{pos}{10000^{2i/d_{\\mathrm{model}}}}\\right)', '\\mathrm{PE}(pos,2i+1)=\\cos\\!\\left(\\frac{pos}{10000^{2i/d_{\\mathrm{model}}}}\\right)'],
         usage_in_transformers: 'Preserves ordering for sequence interpretation in self-attention.',
         related_concepts: ['fnd-embeddings', 'fnd-attention'],
         prerequisites: ['fnd-embeddings'],
@@ -103,7 +103,7 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'fnd-attention'
         },
         tasks: [
-          { id: 'fnd-pos-formula-gap', type: 'fill_formula', prompt: 'Complete the odd-index formula term: PE(pos, 2i+1)= ____ (pos/10000^(2i/d_model))' },
+          { id: 'fnd-pos-formula-gap', type: 'fill_formula', prompt: 'Complete the odd-index formula term: $\\mathrm{PE}(pos,2i+1)=\\underline{\\qquad}\\!\\left(\\frac{pos}{10000^{2i/d_{\\mathrm{model}}}}\\right)$' },
           { id: 'fnd-pos-derive', type: 'derivation_step', prompt: 'Complete one derivation note explaining how sinusoidal features help extrapolate to longer sequences.' }
         ]
       }
@@ -140,9 +140,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'math-attention-math',
         title: 'Scaled dot-product attention math',
         simple_explanation: 'Attention weights come from scaled query-key similarity.',
-        formal_explanation: 'Attention(Q,K,V)=softmax(QK^T/sqrt(d_k))V.',
+        formal_explanation: '$\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)V$.',
         visual_intuition: 'Higher similarity produces higher influence after normalization.',
-        formulas: ['Attention(Q,K,V)=softmax(QK^T/sqrt(d_k))V'],
+        formulas: ['\\mathrm{Attention}(Q,K,V)=\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\sqrt{d_k}}\\right)V'],
         usage_in_transformers: 'Central formula in each attention head.',
         related_concepts: ['math-softmax', 'math-probability'],
         prerequisites: ['math-linear-algebra'],
@@ -155,7 +155,7 @@ const COLLABORATIVE_BLUEPRINTS = [
           next_concept: 'math-softmax'
         },
         tasks: [
-          { id: 'math-attn-missing-term', type: 'fill_formula', prompt: 'Complete: softmax(QK^T / ______ )V.' },
+          { id: 'math-attn-missing-term', type: 'fill_formula', prompt: 'Complete: $\\mathrm{softmax}\\!\\left(\\frac{QK^{\\top}}{\\underline{\\qquad}}\\right)V$.' },
           { id: 'math-attn-derive-step', type: 'derivation_step', prompt: 'Add the derivation step that motivates the scaling factor.' }
         ]
       },
@@ -163,9 +163,9 @@ const COLLABORATIVE_BLUEPRINTS = [
         id: 'math-softmax',
         title: 'Softmax and probability simplex',
         simple_explanation: 'Softmax converts raw scores into nonnegative weights summing to 1.',
-        formal_explanation: 'softmax(z_i)=exp(z_i)/Σ_j exp(z_j).',
+        formal_explanation: '$\\mathrm{softmax}(z_i)=\\frac{\\exp(z_i)}{\\sum_j \\exp(z_j)}$.',
         visual_intuition: 'It turns comparisons into attention shares across candidates.',
-        formulas: ['softmax(z_i)=exp(z_i)/Σ_j exp(z_j)'],
+        formulas: ['\\mathrm{softmax}(z_i)=\\frac{\\exp(z_i)}{\\sum_j \\exp(z_j)}'],
         usage_in_transformers: 'Normalizes attention scores and output token logits.',
         related_concepts: ['math-attention-math', 'math-optimization'],
         prerequisites: ['math-attention-math'],
