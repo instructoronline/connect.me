@@ -1306,8 +1306,42 @@ export async function getPrivacySettingsRecord() {
   }
 
   const query = `?select=user_id,consent_granted,tracking_enabled,history_mode,retention_unit,retention_value,presence_sharing_enabled,invisible_mode_enabled&user_id=eq.${encodeURIComponent(user.id)}&limit=1`;
-  const rows = await restRequest('user_privacy_settings', { query });
-  const row = rows?.[0] || null;
+  let rows = await restRequest('user_privacy_settings', { query });
+  let row = rows?.[0] || null;
+
+  if (!row) {
+    const defaults = getDefaultPrivacySettings();
+    const createPayload = {
+      user_id: user.id,
+      consent_granted: Boolean(defaults.consentGranted),
+      tracking_enabled: Boolean(defaults.trackingEnabled),
+      history_mode: defaults.historyMode,
+      retention_unit: defaults.retentionUnit,
+      retention_value: Number(defaults.retentionValue),
+      presence_sharing_enabled: Boolean(defaults.presenceSharingEnabled),
+      invisible_mode_enabled: Boolean(defaults.invisibleModeEnabled)
+    };
+
+    console.log('[Connect.Me] Privacy settings row missing; creating defaults:', stringifyLogValue({
+      userId: user.id,
+      createPayload
+    }));
+
+    try {
+      rows = await restRequest('user_privacy_settings', {
+        method: 'POST',
+        query: '?on_conflict=user_id',
+        headers: {
+          Prefer: 'resolution=merge-duplicates,return=representation'
+        },
+        body: createPayload
+      });
+      row = rows?.[0] || null;
+    } catch (createError) {
+      throw new Error(`Failed to create privacy settings defaults: ${createError?.message || 'Unknown error'}`);
+    }
+  }
+
   const normalized = normalizePrivacySettingsRow(row);
 
   console.log('[Connect.Me] Privacy settings fetch result:', stringifyLogValue({

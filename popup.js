@@ -2828,13 +2828,21 @@ async function refreshState({ reason = 'manual', force = false } = {}) {
   }
 
   if (state.user) {
+    state.profile = null;
+    state.privacy = getDefaultPrivacySettings();
+    state.hasSavedPrivacySettings = false;
+
     try {
       state.profile = await getProfile();
+    } catch (_error) {
+      state.profile = null;
+    }
+
+    try {
       const privacyRecord = await getPrivacySettingsRecord();
       state.privacy = privacyRecord.normalized;
       state.hasSavedPrivacySettings = privacyRecord.rowExists;
     } catch (_error) {
-      state.profile = null;
       state.privacy = getDefaultPrivacySettings();
       state.hasSavedPrivacySettings = false;
     }
