@@ -1,0 +1,16 @@
+{
+  "name": "connect-me-extension",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "katex": "^0.16.11"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  }
+}
