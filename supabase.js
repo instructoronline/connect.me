@@ -47,10 +47,34 @@ function cloneLearningModuleFallbackData() {
   }));
 }
 
+function getLearningModuleMissingRequirement(message = '') {
+  const normalized = String(message || '').toLowerCase();
+  if (normalized.includes('public.learning_modules')) {
+    return 'public.learning_modules table';
+  }
+  if (normalized.includes('public.learning_module_topics')) {
+    return 'public.learning_module_topics table';
+  }
+  if (normalized.includes('public.learning_module_cards')) {
+    return 'public.learning_module_cards table';
+  }
+  if (normalized.includes('public.learning_module_connections')) {
+    return 'public.learning_module_connections table';
+  }
+  if (normalized.includes('get_learning_module_connected_users')) {
+    return 'public.get_learning_module_connected_users(text) RPC function';
+  }
+  if (normalized.includes('row-level security') || normalized.includes('permission denied') || normalized.includes('rls')) {
+    return 'RLS policy or grant permissions';
+  }
+  return '';
+}
+
 function getLearningModulesFallbackPayload({ reason = 'unavailable', error = null } = {}) {
   const setupRequired = reason === 'missing_tables';
+  const failingRequirement = setupRequired ? getLearningModuleMissingRequirement(error?.message) : '';
   const fallbackDetail = setupRequired
-    ? 'Learning Modules tables are not available in Supabase yet. Apply the bundled migration to enable syncing and connections.'
+    ? `Learning Modules backend setup is incomplete${failingRequirement ? ` (${failingRequirement} missing or inaccessible)` : ''}. Apply the bundled migration to enable syncing and connections.`
     : 'Supabase is temporarily unavailable, so starter modules are being shown from built-in local data.';
 
   return {
@@ -64,7 +88,8 @@ function getLearningModulesFallbackPayload({ reason = 'unavailable', error = nul
       ? 'Starter modules are shown from built-in fallback data until the Learning Modules migration is applied.'
       : 'Starter modules are shown from built-in fallback data while Supabase sync is unavailable.',
     fallbackDetail,
-    errorMessage: error?.message || ''
+    errorMessage: error?.message || '',
+    failingRequirement
   };
 }
 
@@ -1592,6 +1617,109 @@ export async function fetchLearningModules() {
 
     return getLearningModulesFallbackPayload({ reason: 'unavailable', error });
   }
+}
+
+export async function diagnoseLearningModulesBackend({ moduleSlug = 'foundations-of-transformers' } = {}) {
+  const checks = [];
+  const runCheck = async ({ key, label, requiredFor, execute }) => {
+    try {
+      await execute();
+      checks.push({
+        key,
+        label,
+        requiredFor,
+        ok: true,
+        status: 'ok',
+        message: 'OK'
+      });
+    } catch (error) {
+      const message = error?.message || String(error);
+      checks.push({
+        key,
+        label,
+        requiredFor,
+        ok: false,
+        status: isLearningModuleTableMissingMessage(message)
+          || isLearningModuleCardsTableMissingMessage(message)
+          || isLearningModuleConnectionsTableMissingMessage(message)
+          ? 'missing'
+          : 'error',
+        message,
+        failingRequirement: getLearningModuleMissingRequirement(message)
+      });
+    }
+  };
+
+  await runCheck({
+    key: 'learning_modules_select',
+    label: 'Select from public.learning_modules',
+    requiredFor: 'Module list sync',
+    execute: () => publicRestRequest('learning_modules', { query: '?select=id,slug&limit=1' })
+  });
+
+  await runCheck({
+    key: 'learning_module_topics_select',
+    label: 'Select from public.learning_module_topics',
+    requiredFor: 'Topic list sync',
+    execute: () => publicRestRequest('learning_module_topics', { query: '?select=id,module_id&limit=1' })
+  });
+
+  await runCheck({
+    key: 'learning_module_cards_select',
+    label: 'Select from public.learning_module_cards',
+    requiredFor: 'Card content sync (optional; app can use bundled cards)',
+    execute: () => publicRestRequest('learning_module_cards', { query: '?select=id,topic_id&limit=1' })
+  });
+
+  await runCheck({
+    key: 'get_learning_module_connected_users_rpc',
+    label: 'Execute public.get_learning_module_connected_users(text)',
+    requiredFor: '"Show all users connected" live data',
+    execute: () => publicRestRequest('get_learning_module_connected_users', {
+      method: 'POST',
+      rpc: true,
+      body: { requested_module_slug: moduleSlug }
+    })
+  });
+
+  const user = await getCurrentUser().catch(() => null);
+  if (user) {
+    await runCheck({
+      key: 'learning_module_connections_select_authenticated',
+      label: 'Select own rows from public.learning_module_connections',
+      requiredFor: 'Restore your module connections',
+      execute: () => restRequest('learning_module_connections', {
+        query: `?select=id,module_id,user_id&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+      })
+    });
+  } else {
+    checks.push({
+      key: 'learning_module_connections_select_authenticated',
+      label: 'Select own rows from public.learning_module_connections',
+      requiredFor: 'Restore your module connections',
+      ok: false,
+      status: 'skipped',
+      message: 'Skipped because no signed-in user session is available.'
+    });
+  }
+
+  const failedChecks = checks.filter((check) => !check.ok && check.status !== 'skipped');
+  const missingChecks = failedChecks.filter((check) => check.status === 'missing');
+  const failingRequirement = missingChecks[0]?.failingRequirement || failedChecks[0]?.failingRequirement || '';
+
+  return {
+    checkedAt: new Date().toISOString(),
+    moduleSlug,
+    persistenceAvailable: failedChecks.length === 0 || (
+      failedChecks.length === 1 && failedChecks[0]?.key === 'learning_module_cards_select'
+    ),
+    setupRequired: missingChecks.length > 0,
+    failingRequirement,
+    checks,
+    summary: failedChecks.length
+      ? `Learning Modules backend check failed: ${failedChecks[0].label} — ${failedChecks[0].message}`
+      : 'All required Learning Modules backend checks passed.'
+  };
 }
 
 export async function fetchLearningModuleConnectionsForCurrentUser() {

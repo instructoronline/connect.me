@@ -2,6 +2,7 @@ import {
   buildScopedSiteContext,
   clearPresence,
   connectCurrentUserToLearningModule,
+  diagnoseLearningModulesBackend,
   deleteAccountData,
   deleteHistory,
   ensureBuiltInConfig,
@@ -98,6 +99,7 @@ const state = {
     fallbackDetail: '',
     errorMessage: ''
   },
+  learningModuleBackendDiagnostics: null,
   expandedLearningModules: new Set(),
   expandedLearningTopics: new Set(),
   expandedLearningModuleUsers: new Set(),
@@ -1105,6 +1107,89 @@ function renderLearningModulesStatus() {
       ${status.fallbackDetail ? `<div class="small-text">${escapeHtml(actionCopy)}</div>` : ''}
     `;
   }
+
+  renderLearningModuleBackendDiagnostics();
+}
+
+function getLearningModuleDiagnosticsTone(check = {}) {
+  if (check.status === 'ok') {
+    return 'success';
+  }
+  if (check.status === 'skipped') {
+    return 'warning';
+  }
+  return 'error';
+}
+
+function renderLearningModuleBackendDiagnostics() {
+  if (!isDesktopWorkspace || !els.learningModulesBackendDiagnostics) {
+    return;
+  }
+
+  const diagnostics = state.learningModuleBackendDiagnostics;
+  if (!diagnostics) {
+    els.learningModulesBackendDiagnostics.innerHTML = '<div class="empty-state">Backend diagnostics will appear after Learning Modules are loaded.</div>';
+    return;
+  }
+
+  const cards = (diagnostics.checks || []).map((check) => buildInfoTile(
+    check.label,
+    check.ok ? 'Pass' : check.status === 'skipped' ? 'Skipped' : 'Fail',
+    `${check.requiredFor}. ${check.message}`,
+    getLearningModuleDiagnosticsTone(check)
+  )).join('');
+
+  const summaryTone = diagnostics.persistenceAvailable ? 'success' : diagnostics.setupRequired ? 'error' : 'warning';
+  const summaryText = diagnostics.persistenceAvailable
+    ? 'Sync backend ready'
+    : diagnostics.setupRequired
+      ? 'Setup required'
+      : 'Backend unavailable';
+  const detailText = diagnostics.failingRequirement
+    ? `Blocking requirement: ${diagnostics.failingRequirement}`
+    : diagnostics.summary;
+
+  els.learningModulesBackendDiagnostics.innerHTML = [
+    buildInfoTile('Learning Modules backend status', summaryText, detailText, summaryTone),
+    buildInfoTile('Last checked', diagnostics.checkedAt ? new Date(diagnostics.checkedAt).toLocaleString() : 'Unknown', 'Updated automatically during Learning Modules refreshes.'),
+    cards
+  ].join('');
+}
+
+async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning-modules' } = {}) {
+  if (!isDesktopWorkspace) {
+    return null;
+  }
+
+  try {
+    const diagnostics = await diagnoseLearningModulesBackend();
+    state.learningModuleBackendDiagnostics = {
+      ...diagnostics,
+      reason
+    };
+  } catch (error) {
+    state.learningModuleBackendDiagnostics = {
+      checkedAt: new Date().toISOString(),
+      reason,
+      persistenceAvailable: false,
+      setupRequired: false,
+      failingRequirement: '',
+      summary: error?.message || 'Unable to run Learning Modules backend diagnostics.',
+      checks: [
+        {
+          label: 'Learning Modules backend diagnostics',
+          requiredFor: 'Root cause detection',
+          ok: false,
+          status: 'error',
+          message: error?.message || 'Unknown diagnostics error.'
+        }
+      ]
+    };
+  }
+
+  logStructured('log', '[Connect.Me] Learning Modules backend diagnostics', state.learningModuleBackendDiagnostics);
+  renderLearningModuleBackendDiagnostics();
+  return state.learningModuleBackendDiagnostics;
 }
 
 function isLearningModuleSetupError(message = '') {
@@ -1702,6 +1787,7 @@ async function loadLearningModules({ force = false } = {}) {
       ...getLearningModulesStatus(),
       ...(modulePayload || {})
     };
+    await refreshLearningModuleBackendDiagnostics({ reason: 'module-payload-load' });
     if (state.activeModuleId && !state.learningModules.some((module) => module.id === state.activeModuleId)) {
       state.activeLearningView = 'moduleList';
       state.activeModuleId = '';
@@ -1719,11 +1805,13 @@ async function loadLearningModules({ force = false } = {}) {
         pendingConnections = await fetchPendingLearningModuleConnectionsForCurrentUser();
 
         if (state.learningModulesStatus.persistenceAvailable) {
+          let connectionsSetupError = false;
           try {
             const syncResult = await syncPendingLearningModuleConnectionsForCurrentUser(state.learningModules);
             pendingConnections = syncResult.remaining || [];
           } catch (syncError) {
             if (isLearningModuleSetupError(syncError?.message)) {
+              connectionsSetupError = true;
               setLearningModulesFallbackStatus({
                 setupRequired: true,
                 message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
@@ -1736,6 +1824,7 @@ async function loadLearningModules({ force = false } = {}) {
             remoteConnections = await fetchLearningModuleConnectionsForCurrentUser();
           } catch (error) {
             if (isLearningModuleSetupError(error?.message)) {
+              connectionsSetupError = true;
               setLearningModulesFallbackStatus({
                 setupRequired: true,
                 message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
@@ -1744,6 +1833,13 @@ async function loadLearningModules({ force = false } = {}) {
             } else {
               remoteConnections = [];
             }
+          }
+
+          if (!connectionsSetupError) {
+            setLearningModulesSyncedStatus({
+              badge: state.learningModulesStatus.statusBadge || 'Supabase synced',
+              message: state.learningModulesStatus.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
+            });
           }
         }
       } catch (_error) {
@@ -1839,6 +1935,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     const result = await connectCurrentUserToLearningModule(moduleId, { moduleSlug });
     if (result?.queued) {
       state.pendingLocalModuleConnectionIds.add(moduleId);
+      await refreshLearningModuleBackendDiagnostics({ reason: 'connect-queued' });
       setStatus(
         result.status === 'setup_required'
           ? 'Connect Me saved this module locally. Run the bundled Learning Modules SQL and it will sync automatically.'
@@ -1847,6 +1944,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       );
     } else {
       state.pendingLocalModuleConnectionIds.delete(moduleId);
+      await refreshLearningModuleBackendDiagnostics({ reason: 'connect-supabase-success' });
       setLearningModulesSyncedStatus({
         badge: 'Connected',
         message: 'Your learning-module connection was saved to Supabase.'
@@ -1862,6 +1960,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     }
   } catch (error) {
     state.moduleConnectionIds.delete(moduleId);
+    await refreshLearningModuleBackendDiagnostics({ reason: 'connect-error' });
     if (!state.pendingLocalModuleConnectionIds.has(moduleId)) {
       setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
     }
@@ -2685,7 +2784,7 @@ function bindElements() {
     'dataPresenceSharingEnabled', 'dataInvisibleModeEnabled', 'dataTrackingEnabled', 'dataHistoryMode', 'dataRetentionSelect',
     'dataControlsValidationMessage', 'dataPresenceSummary', 'dataConsentSummary', 'dataProfileSummary', 'dataRetentionSummary',
     'clearPresenceButton', 'resetConsentButton', 'exportDataButton', 'editProfileFromDataControls', 'learningModulesList',
-    'learningModulesStatusBadge', 'learningModulesStatusCallout'
+    'learningModulesStatusBadge', 'learningModulesStatusCallout', 'learningModulesBackendDiagnostics'
   ].forEach((id) => {
     els[id] = $(id);
   });
