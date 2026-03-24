@@ -711,13 +711,23 @@ code {
 .pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   border-radius: 999px;
   padding: 7px 11px;
   font-size: 0.78rem;
   font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   background: var(--primary-soft);
   color: var(--primary);
+}
+
+#learningModulesStatusBadge {
+  min-height: 32px;
+  max-width: min(100%, 220px);
+  padding-inline: 14px;
 }
 
 .badge.success,
