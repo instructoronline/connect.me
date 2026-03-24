@@ -1533,21 +1533,38 @@ export async function fetchUsersOnTopSite(domain) {
 
 export async function fetchLearningModules() {
   try {
+    const requestLearningModuleRows = async (resource, query) => {
+      try {
+        return await publicRestRequest(resource, { query });
+      } catch (publicError) {
+        const normalized = String(publicError?.message || '').toLowerCase();
+        const canRetryWithSession = normalized.includes('permission denied')
+          || normalized.includes('row-level security')
+          || normalized.includes('rls')
+          || normalized.includes('jwt');
+
+        if (!canRetryWithSession) {
+          throw publicError;
+        }
+
+        const currentUser = await getCurrentUser();
+        if (!currentUser) {
+          throw publicError;
+        }
+
+        return restRequest(resource, { query });
+      }
+    };
+
     const [modules, topics] = await Promise.all([
-      publicRestRequest('learning_modules', {
-        query: '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'
-      }),
-      publicRestRequest('learning_module_topics', {
-        query: '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc'
-      })
+      requestLearningModuleRows('learning_modules', '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'),
+      requestLearningModuleRows('learning_module_topics', '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc')
     ]);
     let cards = [];
     let usingBundledCards = false;
 
     try {
-      cards = await publicRestRequest('learning_module_cards', {
-        query: '?select=id,module_id,topic_id,title,card_type,sort_order,content&order=module_id.asc,topic_id.asc,sort_order.asc'
-      });
+      cards = await requestLearningModuleRows('learning_module_cards', '?select=id,module_id,topic_id,title,card_type,sort_order,content&order=module_id.asc,topic_id.asc,sort_order.asc');
     } catch (cardsError) {
       if (!isLearningModuleCardsTableMissingMessage(cardsError?.message)) {
         console.warn('[Connect.Me] Unable to load learning module cards from Supabase; using bundled lesson cards instead.', cardsError);
@@ -1659,13 +1676,37 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
 }
 
 export async function fetchLearningModuleConnectedUsers(moduleSlug) {
-  return publicRestRequest('get_learning_module_connected_users', {
-    method: 'POST',
-    rpc: true,
-    body: {
-      requested_module_slug: moduleSlug
+  try {
+    return await publicRestRequest('get_learning_module_connected_users', {
+      method: 'POST',
+      rpc: true,
+      body: {
+        requested_module_slug: moduleSlug
+      }
+    });
+  } catch (publicError) {
+    const normalized = String(publicError?.message || '').toLowerCase();
+    const canRetryWithSession = normalized.includes('permission denied')
+      || normalized.includes('row-level security')
+      || normalized.includes('rls')
+      || normalized.includes('jwt');
+    if (!canRetryWithSession) {
+      throw publicError;
     }
-  });
+
+    const user = await getCurrentUser();
+    if (!user) {
+      throw publicError;
+    }
+
+    return restRequest('get_learning_module_connected_users', {
+      method: 'POST',
+      rpc: true,
+      body: {
+        requested_module_slug: moduleSlug
+      }
+    });
+  }
 }
 
 export async function deleteHistory() {
