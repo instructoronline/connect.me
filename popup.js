@@ -195,8 +195,16 @@ const DESKTOP_NAV_WIDTH = {
 const learningModuleFlatCardCache = new Map();
 
 function setUiInitializationState(isReady) {
-  // Fix: keep desktop shell hidden until async auth/state hydration finishes to prevent login-state flicker.
+  // Fix: keep desktop shell AND popup body hidden until async
+  // auth/state hydration finishes to prevent login-state flicker.
+  // Both .desktop-body.app-initializing and .popup-body.app-initializing
+  // have CSS hide rules in styles.css.
   document.body.classList.toggle(APP_INITIALIZING_CLASS, !isReady);
+  // Sync the backend-checking class on the modules list so card
+  // actions are hidden while availability is still resolving.
+  if (els.learningModulesList) {
+    els.learningModulesList.classList.toggle('backend-checking', !isReady);
+  }
 }
 
 function $(id) {
@@ -1364,14 +1372,23 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
   }
 
   if (!state.user) {
-    // Fix: do not mark backend unavailable before login; auth-gated diagnostics are intentionally deferred.
+    // Fix: do not mark backend unavailable before login; auth-gated
+    // diagnostics are intentionally deferred.
+    // If fetchLearningModules already succeeded (source !== 'fallback'),
+    // the public tables are reachable — preserve that availability so
+    // module cards do not show "Supabase unavailable" for signed-out users.
+    const alreadyLive = getLearningModulesStatus().source !== 'fallback'
+      && getLearningModulesStatus().source !== 'boot'
+      && getLearningModulesStatus().contentState === 'live_ready';
     state.learningModuleBackendDiagnostics = {
       checkedAt: new Date().toISOString(),
       reason,
-      persistenceAvailable: true,
+      persistenceAvailable: alreadyLive,
       setupRequired: false,
       failingRequirement: '',
-      summary: 'Waiting for sign-in before running authenticated Learning Modules checks.',
+      summary: alreadyLive
+        ? 'Public Learning Modules tables reachable. Sign in to enable saved connections.'
+        : 'Waiting for sign-in before running authenticated Learning Modules checks.',
       checks: [
         {
           key: 'learning_modules_auth_gate',
@@ -1385,9 +1402,9 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
     };
     state.learningModulesStatus = {
       ...getLearningModulesStatus(),
-      backendState: 'auth_pending',
-      backendAvailability: 'checking',
-      persistenceAvailable: false
+      backendState: alreadyLive ? 'live_ready' : 'auth_pending',
+      backendAvailability: alreadyLive ? 'available' : 'checking',
+      persistenceAvailable: alreadyLive
     };
     renderLearningModulesSection();
     renderLearningModuleBackendDiagnostics();
@@ -2038,6 +2055,14 @@ function renderLearningModulesSection() {
 
   renderLearningModulesStatus();
   const status = getLearningModulesStatus();
+
+  // Fix: sync the backend-checking CSS class so card actions and
+  // user sections are hidden while availability is still resolving,
+  // preventing "Supabase unavailable" from flashing mid-check.
+  els.learningModulesList.classList.toggle(
+    'backend-checking',
+    status.backendAvailability === 'checking'
+  );
 
   let markup = '';
   if (state.learningModulesLoading && !state.learningModules.length) {
@@ -3723,6 +3748,21 @@ async function initialize() {
     setActiveDesktopSection(state.activeSection);
   }
   await refreshState({ reason: isDesktopWorkspace ? 'desktop-opened' : 'popup-opened', force: true });
+
+  // Fix: defer the UI reveal until the next two animation frames so all
+  // synchronous render calls triggered by refreshState — including the
+  // final runSupabaseDiagnostics render cycle — flush to the DOM before
+  // the app-initializing class is removed. Without this, the UI reveals
+  // mid-render showing intermediate states like "Reconciling" or
+  // "Checking sync readiness".
+  await new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+
   setUiInitializationState(true);
   setStatus('Built-in Supabase configuration loaded successfully.', 'success');
 }
