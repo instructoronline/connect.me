@@ -1,0 +1,2 @@
+# Generated Chrome extension icon PNGs are expected in this folder.
+# Run: node scripts/generate-icons.js
