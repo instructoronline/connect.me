@@ -37,6 +37,7 @@ import {
   upsertProfile
 } from './supabase.js';
 import { privacyHtml } from './privacy.js';
+import { renderRichText } from './math-renderer.js';
 
 const HISTORY_MODE_OPTIONS = [
   { value: 'none', label: 'Store no history' },
@@ -360,86 +361,6 @@ function formatCardTypeLabel(cardType = 'concept') {
     .split('-')
     .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
     .join(' ');
-}
-
-function renderInlineMath(expr = '') {
-  let html = escapeHtml(String(expr || '').trim());
-  const replacements = [
-    [/\\mathbb\{R\}/g, 'ℝ'],
-    [/\\alpha/g, 'α'],
-    [/\\beta/g, 'β'],
-    [/\\gamma/g, 'γ'],
-    [/\\mu/g, 'μ'],
-    [/\\sigma/g, 'σ'],
-    [/\\eta/g, 'η'],
-    [/\\theta/g, 'θ'],
-    [/\\epsilon/g, 'ε'],
-    [/\\odot/g, '⊙'],
-    [/\\sqrt/g, '√'],
-    [/\\top/g, '⊤'],
-    [/\\cdot/g, '·'],
-    [/\\times/g, '×'],
-    [/\\prod/g, '∏'],
-    [/\\sum/g, '∑'],
-    [/\\mid/g, '|'],
-    [/\\left/g, ''],
-    [/\\right/g, ''],
-    [/\\operatorname\{Attn\}/g, 'Attn'],
-    [/\\operatorname\{softmax\}/g, 'softmax'],
-    [/\\operatorname\{MHA\}/g, 'MHA'],
-    [/\\operatorname\{FFN\}/g, 'FFN'],
-    [/\\operatorname\{LN\}/g, 'LN'],
-    [/\\nabla/g, '∇'],
-    [/\\in/g, '∈'],
-    [/\\to/g, '→'],
-    [/\\leq/g, '≤'],
-    [/\\geq/g, '≥'],
-    [/\\neq/g, '≠']
-  ];
-
-  replacements.forEach(([pattern, replacement]) => {
-    html = html.replace(pattern, replacement);
-  });
-
-  html = html.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '<span class="math-frac"><span class="math-frac-top">$1</span><span class="math-frac-bottom">$2</span></span>');
-  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)_\{([^{}]+)\}/g, '$1<sub>$2</sub>');
-  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)_([A-Za-z0-9]+)/g, '$1<sub>$2</sub>');
-  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)\^\{([^{}]+)\}/g, '$1<sup>$2</sup>');
-  html = html.replace(/([A-Za-z0-9)\]α-ωΑ-Ω]+)\^([A-Za-z0-9]+)/g, '$1<sup>$2</sup>');
-  return html.replace(/\\/g, '');
-}
-
-function renderRichText(text = '') {
-  const source = String(text || '').trim();
-  if (!source) {
-    return '<p></p>';
-  }
-
-  const paragraphs = source.split(/\n\n+/).filter(Boolean);
-  return paragraphs.map((paragraph) => {
-    const trimmed = paragraph.trim();
-    if (trimmed.split('\n').every((line) => line.trim().startsWith('- '))) {
-      const items = trimmed.split('\n').map((line) => `<li>${renderRichTextInline(line.trim().slice(2))}</li>`).join('');
-      return `<ul class="rich-list">${items}</ul>`;
-    }
-
-    const parts = trimmed.split(/(\$\$[\s\S]+?\$\$)/g).filter(Boolean);
-    return parts.map((part) => {
-      if (/^\$\$[\s\S]+\$\$$/.test(part)) {
-        return `<div class="math-block">${renderInlineMath(part.slice(2, -2))}</div>`;
-      }
-
-      return `<p>${part.split('\n').map((line) => renderRichTextInline(line)).join('<br />')}</p>`;
-    }).join('');
-  }).join('');
-}
-
-function renderRichTextInline(text = '') {
-  let html = escapeHtml(String(text || ''));
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\$([^$]+)\$/g, (_match, expr) => `<span class="math-inline">${renderInlineMath(expr)}</span>`);
-  return html;
 }
 
 function getFlattenedModuleCards(module) {

@@ -75,7 +75,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Formulation",
-                "body": "Given token representations $X \\in \\mathbb{R}^{n \times d}$, a self-attention layer forms $$Q = XW_Q,\\; K = XW_K,\\; V = XW_V,$$ then computes $$\\operatorname{Attn}(X) = \\operatorname{softmax}\\!\\left(\frac{QK^\top}{\\sqrt{d_k}}\right)V.$$"
+                "body": "Given token representations $X \\in \\mathbb{R}^{n \times d}$, a self-attention layer forms $$Q = XW_Q,\\; K = XW_K,\\; V = XW_V,$$ then computes $$\\operatorname{Attn}(X) = \\operatorname{softmax}\\!\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\right)V.$$"
               },
               {
                 "label": "Interpretation",
@@ -98,7 +98,7 @@ const starterModules = [
               },
               {
                 "label": "Step 2",
-                "body": "In self-attention, token $i$ forms a query vector $q_i$ and compares it to all keys $k_j$ through scores $s_{ij} = q_i^\top k_j / \\sqrt{d_k}$."
+                "body": "In self-attention, token $i$ forms a query vector $q_i$ and compares it to all keys $k_j$ through scores $s_{ij} = q_i^\\top k_j / \\sqrt{d_k}$."
               },
               {
                 "label": "Step 3",
@@ -174,7 +174,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Conceptual picture",
-                "body": "The matrix $A = \\operatorname{softmax}(QK^\top / \\sqrt{d_k})$ can be read row-by-row. Row $i$ shows which positions token $i$ consults."
+                "body": "The matrix $A = \\operatorname{softmax}(QK^\\top / \\sqrt{d_k})$ can be read row-by-row. Row $i$ shows which positions token $i$ consults."
               },
               {
                 "label": "Interpretation",
@@ -276,7 +276,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Formula",
-                "body": "If $E \\in \\mathbb{R}^{|V| \times d}$ is the embedding matrix and $t_i$ is a token id, then the embedded vector is $$x_i = E[t_i].$$ With one-hot vector $e_{t_i}$, the same lookup is $$x_i = e_{t_i}^\top E.$$"
+                "body": "If $E \\in \\mathbb{R}^{|V| \times d}$ is the embedding matrix and $t_i$ is a token id, then the embedded vector is $$x_i = E[t_i].$$ With one-hot vector $e_{t_i}$, the same lookup is $$x_i = e_{t_i}^\\top E.$$"
               },
               {
                 "label": "Interpretation",
@@ -420,7 +420,7 @@ const starterModules = [
               },
               {
                 "label": "Core equation",
-                "body": "$$\\operatorname{Attn}(Q,K,V) = \\operatorname{softmax}\\!\\left(\frac{QK^\top}{\\sqrt{d_k}}\right)V.$$"
+                "body": "$$\\operatorname{Attn}(Q,K,V) = \\operatorname{softmax}\\!\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\right)V.$$"
               },
               {
                 "label": "Why it matters",
@@ -473,11 +473,11 @@ const starterModules = [
             "sections": [
               {
                 "label": "Score matrix",
-                "body": "For token matrix $X$, define $$S = \frac{QK^\top}{\\sqrt{d_k}} \\in \\mathbb{R}^{n \times n}.$$ Entry $S_{ij}$ measures how relevant token $j$ is to token $i$."
+                "body": "For token matrix $X$, define $$S = \\frac{QK^\\top}{\\sqrt{d_k}} \\in \\mathbb{R}^{n \times n}.$$ Entry $S_{ij}$ measures how relevant token $j$ is to token $i$."
               },
               {
                 "label": "Normalized weights",
-                "body": "Apply softmax row-wise so that $$\\alpha_{ij} = \frac{\\exp(S_{ij})}{\\sum_{m=1}^{n} \\exp(S_{im})}, \\qquad \\sum_j \\alpha_{ij} = 1.$$"
+                "body": "Apply softmax row-wise so that $$\\alpha_{ij} = \\frac{\\exp(S_{ij})}{\\sum_{m=1}^{n} \\exp(S_{im})}, \\qquad \\sum_j \\alpha_{ij} = 1.$$"
               },
               {
                 "label": "Output",
@@ -492,7 +492,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Step 1",
-                "body": "Assume query and key coordinates are roughly zero-mean with unit variance. Then the unscaled dot product $q_i^\top k_j = \\sum_{r=1}^{d_k} q_{ir}k_{jr}$ has variance that grows with $d_k$."
+                "body": "Assume query and key coordinates are roughly zero-mean with unit variance. Then the unscaled dot product $q_i^\\top k_j = \\sum_{r=1}^{d_k} q_{ir}k_{jr}$ has variance that grows with $d_k$."
               },
               {
                 "label": "Step 2",
@@ -649,7 +649,7 @@ const starterModules = [
               },
               {
                 "label": "Geometric view",
-                "body": "The relation $$a^\top b = \\|a\\|\\,\\|b\\|\\cos \theta$$ links algebraic similarity to angle."
+                "body": "The relation $$a^\\top b = \\|a\\|\\,\\|b\\|\\cos \\theta$$ links algebraic similarity to angle."
               },
               {
                 "label": "Why it matters",
@@ -687,7 +687,7 @@ const starterModules = [
               },
               {
                 "label": "Cosine similarity",
-                "body": "$$\\cos(x,y) = \frac{x^\top y}{\\|x\\|_2\\,\\|y\\|_2}. $$"
+                "body": "$$\\cos(x,y) = \\frac{x^\\top y}{\\|x\\|_2\\,\\|y\\|_2}. $$"
               },
               {
                 "label": "Interpretation",
@@ -702,11 +702,11 @@ const starterModules = [
             "sections": [
               {
                 "label": "Step 1",
-                "body": "For a single query $q_i$ and all keys $K$, scores are $s_i = q_i K^\top$."
+                "body": "For a single query $q_i$ and all keys $K$, scores are $s_i = q_i K^\\top$."
               },
               {
                 "label": "Step 2",
-                "body": "Stacking all queries into $Q$ gives the full score matrix $$S = QK^\top.$$"
+                "body": "Stacking all queries into $Q$ gives the full score matrix $$S = QK^\\top.$$"
               },
               {
                 "label": "Step 3",
@@ -725,7 +725,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Example",
-                "body": "Let $a = (1,2)$ and $b = (3,4)$. Then $$a^\top b = 1\\cdot 3 + 2\\cdot 4 = 11.$$"
+                "body": "Let $a = (1,2)$ and $b = (3,4)$. Then $$a^\\top b = 1\\cdot 3 + 2\\cdot 4 = 11.$$"
               },
               {
                 "label": "Interpretation",
@@ -827,7 +827,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Definition",
-                "body": "Softmax maps a vector of logits $z$ to positive values that sum to one: $$\\operatorname{softmax}(z_i) = \frac{e^{z_i}}{\\sum_j e^{z_j}}.$$"
+                "body": "Softmax maps a vector of logits $z$ to positive values that sum to one: $$\\operatorname{softmax}(z_i) = \\frac{e^{z_i}}{\\sum_j e^{z_j}}.$$"
               },
               {
                 "label": "Interpretation",
@@ -884,7 +884,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Stable form",
-                "body": "To avoid overflow, compute $$\\operatorname{softmax}(z_i) = \frac{e^{z_i - m}}{\\sum_j e^{z_j - m}}, \\qquad m = \\max_j z_j.$$"
+                "body": "To avoid overflow, compute $$\\operatorname{softmax}(z_i) = \\frac{e^{z_i - m}}{\\sum_j e^{z_j - m}}, \\qquad m = \\max_j z_j.$$"
               },
               {
                 "label": "Why it works",
@@ -1028,7 +1028,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Definition",
-                "body": "Optimization chooses parameters $\theta$ to reduce an objective $L(\theta)$, often with stochastic gradient methods that update $$\theta \\leftarrow \theta - \\eta \nabla_\theta L.$$"
+                "body": "Optimization chooses parameters $\\theta$ to reduce an objective $L(\\theta)$, often with stochastic gradient methods that update $$\\theta \\leftarrow \\theta - \\eta \\nabla_\\theta L.$$"
               },
               {
                 "label": "Why it matters",
@@ -1085,7 +1085,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Update form",
-                "body": "Adam maintains moving averages of gradients $m_t$ and squared gradients $v_t$, then updates roughly as $$\theta_t = \theta_{t-1} - \\eta \frac{\\hat m_t}{\\sqrt{\\hat v_t} + \\epsilon}. $$"
+                "body": "Adam maintains moving averages of gradients $m_t$ and squared gradients $v_t$, then updates roughly as $$\\theta_t = \\theta_{t-1} - \\eta \\frac{\\hat m_t}{\\sqrt{\\hat v_t} + \\epsilon}. $$"
               },
               {
                 "label": "Interpretation",
@@ -1295,7 +1295,7 @@ const starterModules = [
             "sections": [
               {
                 "label": "Formula",
-                "body": "For token $i$ attending to token $j$, the raw compatibility is $$s_{ij} = \frac{q_i^\top k_j}{\\sqrt{d_k}}.$$"
+                "body": "For token $i$ attending to token $j$, the raw compatibility is $$s_{ij} = \\frac{q_i^\\top k_j}{\\sqrt{d_k}}.$$"
               },
               {
                 "label": "Interpretation",
@@ -1682,7 +1682,7 @@ const starterModules = [
               },
               {
                 "label": "Formula",
-                "body": "For token vector $x$, layer norm computes $$\\operatorname{LN}(x) = \\gamma \\odot \frac{x - \\mu}{\\sqrt{\\sigma^2 + \\epsilon}} + \beta.$$"
+                "body": "For token vector $x$, layer norm computes $$\\operatorname{LN}(x) = \\gamma \\odot \\frac{x - \\mu}{\\sqrt{\\sigma^2 + \\epsilon}} + \\beta.$$"
               },
               {
                 "label": "Relevance",
