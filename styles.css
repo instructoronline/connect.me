@@ -1938,6 +1938,84 @@ code {
   min-height: 100%;
 }
 
+.collaboration-presence-strip {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(244, 248, 255, 0.84);
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-avatar-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collab-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(49, 95, 244, 0.16);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.collab-architecture-grid,
+.collab-workspace-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.collab-workspace-grid {
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.35fr) minmax(240px, 1fr);
+}
+
+.concept-graph-list {
+  display: grid;
+  gap: 10px;
+}
+
+.concept-node-button {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 10px;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.concept-node-button.is-active {
+  border-color: rgba(49, 95, 244, 0.35);
+  background: rgba(244, 247, 255, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(49, 95, 244, 0.16);
+}
+
+.concept-detail-panel select,
+.learning-module-content-section textarea {
+  width: 100%;
+}
+
+.suggested-links-panel {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.reaction-row {
+  margin-top: 8px;
+}
+
 .learning-module-progress-grid {
   flex-wrap: wrap;
 }
@@ -2091,6 +2169,10 @@ code {
   .learning-module-progress-grid,
   .learning-module-player-footer {
     flex-direction: column;
+  }
+
+  .collab-workspace-grid {
+    grid-template-columns: 1fr;
   }
 }
 
