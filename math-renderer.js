@@ -1,5 +1,3 @@
-import katex from 'katex';
-
 const richTextCache = new Map();
 const mathMarkupCache = new Map();
 
@@ -41,8 +39,21 @@ function wrapMath(inner, displayMode = false) {
   return `<math xmlns="http://www.w3.org/1998/Math/MathML" display="${displayMode ? 'block' : 'inline'}"><mrow>${inner || '<mrow></mrow>'}</mrow></math>`;
 }
 
+function getKatexRenderer() {
+  if (typeof globalThis === 'undefined') {
+    return null;
+  }
+
+  const maybeKatex = globalThis.katex;
+  if (maybeKatex && typeof maybeKatex.renderToString === 'function') {
+    return maybeKatex;
+  }
+
+  return null;
+}
+
 function hasKatexRenderer() {
-  return Boolean(katex && typeof katex.renderToString === 'function');
+  return Boolean(getKatexRenderer());
 }
 
 function normalizePlaceholderToken(value = '') {
@@ -140,11 +151,13 @@ export function splitTextAndMathSegments(text = '') {
 }
 
 function renderKaTeX(expression = '', { displayMode = false } = {}) {
-  if (!hasKatexRenderer()) {
+  const katexRenderer = getKatexRenderer();
+  if (!katexRenderer) {
     return null;
   }
+
   try {
-    return katex.renderToString(normalizeLatex(expression), {
+    return katexRenderer.renderToString(normalizeLatex(expression), {
       throwOnError: true,
       displayMode,
       strict: 'ignore',
