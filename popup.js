@@ -3336,6 +3336,18 @@ async function bindEvents() {
     els.navRailToggle?.addEventListener('click', () => {
       setDesktopNavExpanded(!state.isNavExpanded);
     });
+    if (els.workspaceNav && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      els.workspaceNav.addEventListener('mouseenter', () => {
+        if (!state.isNavExpanded) {
+          setDesktopNavExpanded(true);
+        }
+      });
+      els.workspaceNav.addEventListener('mouseleave', () => {
+        if (state.isNavExpanded && document.activeElement !== els.navRailToggle) {
+          setDesktopNavExpanded(false);
+        }
+      });
+    }
   } else {
     document.querySelectorAll('.tab-link').forEach((button) => {
       button.addEventListener('click', () => switchTab(button.dataset.tab));
