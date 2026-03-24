@@ -1251,7 +1251,7 @@ function moveLearningModuleCard(offset) {
 
   if (nextIndex >= snapshot.flatCards.length) {
     state.learningModuleCompleted = true;
-    renderLearningModulesSection();
+    updateLearningModulePlayerView();
     return;
   }
 
@@ -1260,7 +1260,7 @@ function moveLearningModuleCard(offset) {
   state.activeCardIndex = nextEntry.cardIndex;
   state.activeSubcardIndex = 0;
   state.learningModuleCompleted = false;
-  renderLearningModulesSection();
+  updateLearningModulePlayerView();
 }
 
 function renderLearningModuleTopicPreview(module, topic) {
@@ -1270,7 +1270,7 @@ function renderLearningModuleTopicPreview(module, topic) {
   const previewCards = isOpen ? cards : cards.slice(0, 3);
 
   return `
-    <div class="learning-module-topic-preview ${isOpen ? 'is-open' : ''}">
+    <div class="learning-module-topic-preview ${isOpen ? 'is-open' : ''}" data-topic-preview-id="${escapeHtml(topic.id)}">
       <button
         type="button"
         class="learning-module-topic-toggle"
@@ -1311,6 +1311,27 @@ function renderLearningModuleTopicPreview(module, topic) {
   `;
 }
 
+function rerenderLearningModuleTopicPreview(moduleId, topicId) {
+  if (!moduleId || !topicId || !els.learningModulesList) {
+    return;
+  }
+
+  const module = getLearningModuleById(moduleId);
+  const topic = (module?.topics || []).find((entry) => entry.id === topicId);
+  if (!module || !topic) {
+    return;
+  }
+
+  const selector = `[data-module-card-id="${CSS.escape(moduleId)}"] [data-topic-preview-id="${CSS.escape(topicId)}"]`;
+  const topicElement = els.learningModulesList.querySelector(selector);
+  if (!topicElement) {
+    rerenderLearningModuleCard(moduleId);
+    return;
+  }
+
+  topicElement.outerHTML = renderLearningModuleTopicPreview(module, topic);
+}
+
 function renderLearningModulePlayer() {
   const snapshot = getLearningModulePlayerSnapshot();
   if (!snapshot?.module) {
@@ -1334,7 +1355,7 @@ function renderLearningModulePlayer() {
   const isLastCard = currentFlatIndex === flatCards.length - 1;
 
   return `
-    <article class="learning-module-player surface-card stack-md">
+    <article class="learning-module-player surface-card stack-md" data-player-module-id="${escapeHtml(module.id)}">
       <div class="section-heading dashboard-section-heading">
         <div>
           <p class="eyebrow">Lesson viewer</p>
@@ -1358,14 +1379,14 @@ function renderLearningModulePlayer() {
       </div>
 
       <div class="learning-module-player-card">
-        <div class="learning-module-player-card-header">
+        <div class="learning-module-player-card-header" data-player-header>
           <div class="stack-xs">
             <span class="pill">${escapeHtml(formatCardTypeLabel(card.card_type))}</span>
             <h3>${escapeHtml(card.title || 'Learning card')}</h3>
             ${card.subtopic_title ? `<p class="muted">${escapeHtml(card.subtopic_title)}</p>` : ''}
           </div>
         </div>
-        <div class="learning-module-player-sections">
+        <div class="learning-module-player-sections" data-player-sections>
           ${sections.map((section) => `
             <section class="learning-module-content-section">
               <h4>${escapeHtml(section.label || 'Section')}</h4>
@@ -1375,27 +1396,246 @@ function renderLearningModulePlayer() {
         </div>
       </div>
 
-      ${state.learningModuleCompleted || isLastCard ? `
+      <div class="learning-module-player-callout ${state.learningModuleCompleted || isLastCard ? 'is-visible' : ''}" data-player-callout>
+        ${(state.learningModuleCompleted || isLastCard) ? `
         <div class="callout info">
           <strong>${state.learningModuleCompleted ? 'Module completed.' : 'Final card reached.'}</strong>
           <div>${state.learningModuleCompleted ? 'You have reached the end of this guided lesson flow.' : 'Use Next once more to mark the lesson as completed, or go Back to revisit earlier cards.'}</div>
-        </div>
-      ` : ''}
+        </div>` : ''}
+      </div>
 
       <div class="learning-module-player-footer">
-        <button type="button" class="secondary" data-action="module-back" ${isFirstCard ? 'disabled' : ''}>Back</button>
+        <button type="button" class="secondary" data-action="module-back" data-player-back ${isFirstCard ? 'disabled' : ''}>Back</button>
         <div class="learning-module-progress-bar" aria-hidden="true">
-          <span style="width: ${(cardPosition / flatCards.length) * 100}%"></span>
+          <span data-player-progress style="width: ${(cardPosition / flatCards.length) * 100}%"></span>
         </div>
         <button
           type="button"
           data-action="module-next"
+          data-player-next
         >
           ${state.learningModuleCompleted ? 'Completed' : isLastCard ? 'Finish module' : 'Next'}
         </button>
       </div>
     </article>
   `;
+}
+
+function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
+  const isExpanded = state.expandedLearningModules.has(module.id);
+  const connectionDisplay = getModuleConnectionDisplay(module.id);
+  const isConnected = connectionDisplay.connected;
+  const isQueued = connectionDisplay.queued;
+  const isConnecting = state.pendingModuleConnectionIds.has(module.id);
+  const topics = Array.isArray(module.topics) ? module.topics : [];
+  const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
+    ? 'Hide all users connected'
+    : 'Show all users connected';
+  const canConnect = !isConnecting && !connectionDisplay.isSaved;
+  const helperText = !state.user
+    ? 'Sign in to connect yourself to a module. Browsing modules remains available while signed out.'
+    : isQueued
+      ? (status.setupRequired
+        ? 'Saved locally. Run the bundled Learning Modules SQL to sync this connection into Supabase.'
+        : 'Saved locally and will sync automatically once Supabase becomes available again.')
+      : status.persistenceAvailable
+        ? 'Connect yourself to save this module to your Supabase-backed workspace.'
+        : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
+
+  return `
+    <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}" data-module-card-id="${escapeHtml(module.id)}">
+      <div class="learning-module-card-inner">
+        <button
+          type="button"
+          class="learning-module-header"
+          data-action="toggle-module"
+          data-module-id="${escapeHtml(module.id)}"
+          aria-expanded="${String(isExpanded)}"
+        >
+          <div class="stack-xs">
+            <div class="learning-module-heading-row">
+              <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
+              ${isConnected ? '<span class="pill success">Connected</span>' : ''}
+              ${isQueued ? '<span class="pill warning">Queued sync</span>' : ''}
+              ${!status.persistenceAvailable ? '<span class="pill warning">Fallback</span>' : ''}
+            </div>
+            <div>
+              <h3>${escapeHtml(module.title)}</h3>
+              <p class="muted">${escapeHtml(module.description)}</p>
+            </div>
+          </div>
+          <span class="learning-module-chevron" aria-hidden="true">${renderChevronIcon()}</span>
+        </button>
+
+        <div class="learning-module-actions">
+          <button
+            type="button"
+            class="learning-module-connect-button secondary ${isConnected ? 'is-connected' : ''}"
+            data-action="connect-module"
+            data-module-id="${escapeHtml(module.id)}"
+            data-module-slug="${escapeHtml(module.slug)}"
+            ${!canConnect ? 'disabled' : ''}
+            title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : status.persistenceAvailable ? 'Save this learning module to your profile.' : 'Save locally now and sync to Supabase later.')}"
+          >
+            <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
+            <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : isQueued ? 'Queued locally' : 'Connect Me'}</span>
+          </button>
+          <button
+            type="button"
+            class="learning-module-start-button"
+            data-action="start-module"
+            data-module-id="${escapeHtml(module.id)}"
+            title="Open this module in the center panel and move through it card-by-card."
+          >
+            Start Module
+          </button>
+          <button
+            type="button"
+            class="secondary small"
+            data-action="toggle-users"
+            data-module-id="${escapeHtml(module.id)}"
+            data-module-slug="${escapeHtml(module.slug)}"
+            ${!status.persistenceAvailable ? 'disabled' : ''}
+            title="${escapeHtml(status.persistenceAvailable ? 'View everyone who connected to this module.' : 'Connected-user lists require Supabase syncing.')}"
+          >
+            ${escapeHtml(userToggleLabel)}
+          </button>
+        </div>
+
+        <p class="muted small-text">${escapeHtml(helperText)}</p>
+
+        <div class="learning-module-collapsible ${isExpanded ? 'is-open' : ''}">
+          <div class="learning-module-collapsible-inner">
+            <div class="learning-module-section-block stack-sm">
+              <div class="section-heading compact">
+                <div>
+                  <h3>Topics</h3>
+                  <p class="muted small-text">Preview the guided study path before opening the lesson viewer.</p>
+                </div>
+              </div>
+              ${topics.length
+                ? `
+                  <div class="learning-module-topic-list">
+                    ${topics.map((topic) => renderLearningModuleTopicPreview(module, topic)).join('')}
+                  </div>
+                `
+                : '<div class="empty-state">No topics have been added yet.</div>'}
+            </div>
+          </div>
+        </div>
+
+        ${renderLearningModuleUsers(module)}
+      </div>
+    </article>
+  `;
+}
+
+function rerenderLearningModuleCard(moduleId) {
+  if (!moduleId || !els.learningModulesList) {
+    return;
+  }
+
+  const module = getLearningModuleById(moduleId);
+  if (!module) {
+    return;
+  }
+
+  const existingCard = els.learningModulesList.querySelector(`[data-module-card-id="${CSS.escape(moduleId)}"]`);
+  if (!existingCard) {
+    renderLearningModulesSection();
+    return;
+  }
+
+  existingCard.outerHTML = renderLearningModuleCard(module);
+}
+
+function updateLearningModulePlayerView() {
+  const player = els.learningModulesList?.querySelector('.learning-module-player[data-player-module-id]');
+  if (!player || state.activeLearningView !== 'modulePlayer') {
+    return;
+  }
+
+  const snapshot = getLearningModulePlayerSnapshot();
+  if (!snapshot?.module || !snapshot?.currentEntry) {
+    renderLearningModulesSection();
+    return;
+  }
+
+  const { module, flatCards, currentEntry, currentFlatIndex } = snapshot;
+  const { topic, card, topicIndex } = currentEntry;
+  const sections = Array.isArray(card.sections) ? card.sections : [];
+  const cardPosition = currentFlatIndex + 1;
+  const isFirstCard = currentFlatIndex === 0;
+  const isLastCard = currentFlatIndex === flatCards.length - 1;
+
+  const title = player.querySelector('h2');
+  if (title) {
+    title.textContent = module.title;
+  }
+
+  const progressTitle = player.querySelector('.learning-module-progress-tile strong');
+  if (progressTitle) {
+    progressTitle.textContent = `Card ${cardPosition} of ${flatCards.length}`;
+  }
+  const progressTopic = player.querySelector('.learning-module-progress-tile .muted.small-text');
+  if (progressTopic) {
+    progressTopic.textContent = `Topic ${topicIndex + 1} of ${(module.topics || []).length}`;
+  }
+
+  const topicTileTitle = player.querySelector('.learning-module-progress-tile:nth-child(2) strong');
+  if (topicTileTitle) {
+    topicTileTitle.textContent = topic.topic_title || 'Topic';
+  }
+  const topicTileSub = player.querySelector('.learning-module-progress-tile:nth-child(2) .muted.small-text');
+  if (topicTileSub) {
+    topicTileSub.textContent = card.subtopic_title || card.title || 'Current lesson';
+  }
+
+  const header = player.querySelector('[data-player-header]');
+  if (header) {
+    header.innerHTML = `
+      <div class="stack-xs">
+        <span class="pill">${escapeHtml(formatCardTypeLabel(card.card_type))}</span>
+        <h3>${escapeHtml(card.title || 'Learning card')}</h3>
+        ${card.subtopic_title ? `<p class="muted">${escapeHtml(card.subtopic_title)}</p>` : ''}
+      </div>
+    `;
+  }
+
+  const sectionsContainer = player.querySelector('[data-player-sections]');
+  if (sectionsContainer) {
+    sectionsContainer.innerHTML = sections.map((section) => `
+      <section class="learning-module-content-section">
+        <h4>${escapeHtml(section.label || 'Section')}</h4>
+        ${renderRichText(section.body || '')}
+      </section>
+    `).join('');
+  }
+
+  const callout = player.querySelector('[data-player-callout]');
+  if (callout) {
+    const showCallout = state.learningModuleCompleted || isLastCard;
+    callout.classList.toggle('is-visible', showCallout);
+    callout.innerHTML = showCallout
+      ? `<div class="callout info">
+          <strong>${state.learningModuleCompleted ? 'Module completed.' : 'Final card reached.'}</strong>
+          <div>${state.learningModuleCompleted ? 'You have reached the end of this guided lesson flow.' : 'Use Next once more to mark the lesson as completed, or go Back to revisit earlier cards.'}</div>
+        </div>`
+      : '';
+  }
+
+  const backButton = player.querySelector('[data-player-back]');
+  if (backButton) {
+    backButton.disabled = isFirstCard;
+  }
+  const nextButton = player.querySelector('[data-player-next]');
+  if (nextButton) {
+    nextButton.textContent = state.learningModuleCompleted ? 'Completed' : isLastCard ? 'Finish module' : 'Next';
+  }
+  const progressBar = player.querySelector('[data-player-progress]');
+  if (progressBar) {
+    progressBar.style.width = `${(cardPosition / flatCards.length) * 100}%`;
+  }
 }
 
 function renderLearningModulesSection() {
@@ -1426,113 +1666,7 @@ function renderLearningModulesSection() {
     return;
   }
 
-  els.learningModulesList.innerHTML = state.learningModules.map((module) => {
-    const isExpanded = state.expandedLearningModules.has(module.id);
-    const connectionDisplay = getModuleConnectionDisplay(module.id);
-    const isConnected = connectionDisplay.connected;
-    const isQueued = connectionDisplay.queued;
-    const isConnecting = state.pendingModuleConnectionIds.has(module.id);
-    const topics = Array.isArray(module.topics) ? module.topics : [];
-    const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
-      ? 'Hide all users connected'
-      : 'Show all users connected';
-    const canConnect = !isConnecting && !connectionDisplay.isSaved;
-    const helperText = !state.user
-      ? 'Sign in to connect yourself to a module. Browsing modules remains available while signed out.'
-      : isQueued
-        ? (status.setupRequired
-          ? 'Saved locally. Run the bundled Learning Modules SQL to sync this connection into Supabase.'
-          : 'Saved locally and will sync automatically once Supabase becomes available again.')
-        : status.persistenceAvailable
-          ? 'Connect yourself to save this module to your Supabase-backed workspace.'
-          : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
-
-    return `
-      <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}">
-        <div class="learning-module-card-inner">
-          <button
-            type="button"
-            class="learning-module-header"
-            data-action="toggle-module"
-            data-module-id="${escapeHtml(module.id)}"
-            aria-expanded="${String(isExpanded)}"
-          >
-            <div class="stack-xs">
-              <div class="learning-module-heading-row">
-                <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
-                ${isConnected ? '<span class="pill success">Connected</span>' : ''}
-                ${isQueued ? '<span class="pill warning">Queued sync</span>' : ''}
-                ${!status.persistenceAvailable ? '<span class="pill warning">Fallback</span>' : ''}
-              </div>
-              <div>
-                <h3>${escapeHtml(module.title)}</h3>
-                <p class="muted">${escapeHtml(module.description)}</p>
-              </div>
-            </div>
-            <span class="learning-module-chevron" aria-hidden="true">${renderChevronIcon()}</span>
-          </button>
-
-          <div class="learning-module-actions">
-            <button
-              type="button"
-              class="learning-module-connect-button secondary ${isConnected ? 'is-connected' : ''}"
-              data-action="connect-module"
-              data-module-id="${escapeHtml(module.id)}"
-              data-module-slug="${escapeHtml(module.slug)}"
-              ${!canConnect ? 'disabled' : ''}
-              title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : status.persistenceAvailable ? 'Save this learning module to your profile.' : 'Save locally now and sync to Supabase later.')}"
-            >
-              <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
-              <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : isQueued ? 'Queued locally' : 'Connect Me'}</span>
-            </button>
-            <button
-              type="button"
-              class="learning-module-start-button"
-              data-action="start-module"
-              data-module-id="${escapeHtml(module.id)}"
-              title="Open this module in the center panel and move through it card-by-card."
-            >
-              Start Module
-            </button>
-            <button
-              type="button"
-              class="secondary small"
-              data-action="toggle-users"
-              data-module-slug="${escapeHtml(module.slug)}"
-              ${!status.persistenceAvailable ? 'disabled' : ''}
-              title="${escapeHtml(status.persistenceAvailable ? 'View everyone who connected to this module.' : 'Connected-user lists require Supabase syncing.')}"
-            >
-              ${escapeHtml(userToggleLabel)}
-            </button>
-          </div>
-
-          <p class="muted small-text">${escapeHtml(helperText)}</p>
-
-          <div class="learning-module-collapsible ${isExpanded ? 'is-open' : ''}">
-            <div class="learning-module-collapsible-inner">
-              <div class="learning-module-section-block stack-sm">
-                <div class="section-heading compact">
-                  <div>
-                    <h3>Topics</h3>
-                    <p class="muted small-text">Preview the guided study path before opening the lesson viewer.</p>
-                  </div>
-                </div>
-                ${topics.length
-                  ? `
-                    <div class="learning-module-topic-list">
-                      ${topics.map((topic) => renderLearningModuleTopicPreview(module, topic)).join('')}
-                    </div>
-                  `
-                  : '<div class="empty-state">No topics have been added yet.</div>'}
-              </div>
-            </div>
-          </div>
-
-          ${renderLearningModuleUsers(module)}
-        </div>
-      </article>
-    `;
-  }).join('');
+  els.learningModulesList.innerHTML = state.learningModules.map((module) => renderLearningModuleCard(module, status)).join('');
 }
 
 async function loadLearningModules({ force = false } = {}) {
@@ -1630,13 +1764,17 @@ async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
   }
 
   if (!force && state.learningModuleUsersBySlug.has(moduleSlug)) {
-    renderLearningModulesSection();
+    const module = state.learningModules.find((item) => item.slug === moduleSlug);
+    rerenderLearningModuleCard(module?.id);
     return;
   }
 
   state.learningModuleUsersLoading.add(moduleSlug);
   state.learningModuleUsersErrors.delete(moduleSlug);
-  renderLearningModulesSection();
+  {
+    const module = state.learningModules.find((item) => item.slug === moduleSlug);
+    rerenderLearningModuleCard(module?.id);
+  }
 
   try {
     const connectedUsers = await fetchLearningModuleConnectedUsers(moduleSlug);
@@ -1645,7 +1783,8 @@ async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
     state.learningModuleUsersErrors.set(moduleSlug, error.message || 'Unable to load connected users right now.');
   } finally {
     state.learningModuleUsersLoading.delete(moduleSlug);
-    renderLearningModulesSection();
+    const module = state.learningModules.find((item) => item.slug === moduleSlug);
+    rerenderLearningModuleCard(module?.id);
   }
 }
 
@@ -1674,7 +1813,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
 
   state.pendingModuleConnectionIds.add(moduleId);
   state.moduleConnectionIds.add(moduleId);
-  renderLearningModulesSection();
+  rerenderLearningModuleCard(moduleId);
 
   try {
     const result = await connectCurrentUserToLearningModule(moduleId, { moduleSlug });
@@ -1702,7 +1841,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     }
   } finally {
     state.pendingModuleConnectionIds.delete(moduleId);
-    renderLearningModulesSection();
+    rerenderLearningModuleCard(moduleId);
   }
 }
 
@@ -2568,7 +2707,10 @@ async function bindEvents() {
       } else {
         state.expandedLearningModules.add(moduleId);
       }
-      renderLearningModulesSection();
+      const moduleCard = actionButton.closest('.learning-module-card');
+      const isExpanded = state.expandedLearningModules.has(moduleId);
+      moduleCard?.classList.toggle('is-expanded', isExpanded);
+      actionButton.setAttribute('aria-expanded', String(isExpanded));
       return;
     }
 
@@ -2580,7 +2722,7 @@ async function bindEvents() {
       } else {
         state.expandedLearningTopics.add(topicKey);
       }
-      renderLearningModulesSection();
+      rerenderLearningModuleTopicPreview(moduleId, topicId);
       return;
     }
 
@@ -2612,12 +2754,12 @@ async function bindEvents() {
     if (actionButton.dataset.action === 'toggle-users') {
       if (state.expandedLearningModuleUsers.has(moduleSlug)) {
         state.expandedLearningModuleUsers.delete(moduleSlug);
-        renderLearningModulesSection();
+        rerenderLearningModuleCard(moduleId);
         return;
       }
 
       state.expandedLearningModuleUsers.add(moduleSlug);
-      renderLearningModulesSection();
+      rerenderLearningModuleCard(moduleId);
       await loadLearningModuleUsers(moduleSlug);
     }
   });
