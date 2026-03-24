@@ -1,0 +1,17 @@
+{
+  "master_svg": "assets/branding/connectme-logo.svg",
+  "desktop_icons": {
+    "png": {
+      "64": "assets/branding/generated/desktop/icon-64.png",
+      "128": "assets/branding/generated/desktop/icon-128.png",
+      "256": "assets/branding/generated/desktop/icon-256.png",
+      "512": "assets/branding/generated/desktop/icon-512.png"
+    },
+    "windows_ico": "assets/branding/generated/desktop/icon.ico",
+    "macos_icns": "assets/branding/generated/desktop/icon.icns"
+  },
+  "notes": [
+    "This repository keeps branding changes text-only; generated binary icons are intentionally excluded from source control.",
+    "Run: node scripts/generate-icons.js"
+  ]
+}

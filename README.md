@@ -126,7 +126,7 @@ Examples:
 
 ## Files
 
-- `manifest.json` – Manifest V3 definition with minimal permissions, the built-in Supabase host permission, and no required icon binaries.
+- `manifest.json` – Manifest V3 definition with minimal permissions, built-in Supabase host permission, and generated icon target paths.
 - `background.js` – Service worker for consent-gated tracking, presence heartbeat updates, and periodic purge requests.
 - `popup.html` / `popup.js` – Main popup UI with Current Site, Top Sites, Settings, and Privacy tabs.
 - `options.html` / `options.js` – Full-page settings overview and quick links.
@@ -134,6 +134,28 @@ Examples:
 - `styles.css` – Shared light-theme UI styles with compact Chrome-extension-friendly layout.
 - `supabase.js` – Lightweight Supabase integration for auth, storage, presence, history, retention parsing, and privacy settings.
 - `docs/supabase-schema.sql` – Database schema, RLS, storage policies, top-sites view, and purge functions.
+
+
+## Branding and icon source of truth
+
+Connect.Me branding now uses one transparent SVG source:
+
+- `assets/branding/connectme-logo.svg`
+
+This SVG is used directly in the popup/desktop welcome surfaces and as the source for generated icon binaries required by Chrome and desktop packaging workflows.
+
+### Generated icon targets (not committed in this text-only PR)
+
+- Chrome extension: `assets/branding/generated/chrome/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png`
+- Desktop packaging: `assets/branding/generated/desktop/icon-64.png`, `icon-128.png`, `icon-256.png`, `icon-512.png`, plus optional `icon.ico` and `icon.icns`
+
+### Generate icons from the master SVG
+
+```bash
+node scripts/generate-icons.js
+```
+
+The script uses either `inkscape` or `rsvg-convert` to rasterize PNG targets, and optionally `magick` to build a Windows `.ico`.
 
 ## Supabase setup
 
