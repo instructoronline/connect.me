@@ -40,6 +40,7 @@ import {
 import { privacyHtml } from './privacy.js';
 import { renderRichText } from './math-renderer.js';
 import { getStarterLearningModules } from './learning-modules.js';
+import { buildCollaborativeModuleIndex, getCompletionStates } from './collaborative-learning.js';
 
 const HISTORY_MODE_OPTIONS = [
   { value: 'none', label: 'Store no history' },
@@ -123,6 +124,12 @@ const state = {
   activeCardIndex: 0,
   activeSubcardIndex: 0,
   learningModuleCompleted: false,
+  activeConceptIdByModule: {},
+  completionStatesByConceptId: {},
+  collaborationDraftsByTaskId: {},
+  helpfulReactionsByConceptId: {},
+  completeTogetherByModuleId: {},
+  collaborativeModuleIndex: buildCollaborativeModuleIndex(),
   formState: {
     consent: createFormState(),
     settings: createFormState(),
@@ -435,6 +442,65 @@ function formatCardTypeLabel(cardType = 'concept') {
     .split('-')
     .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
     .join(' ');
+}
+
+const COMPLETION_STATE_LABELS = {
+  not_started: 'Not started',
+  exploring: 'Exploring',
+  partially_completed: 'Partially completed',
+  needs_review: 'Needs review',
+  well_explained: 'Well explained',
+  mastered: 'Mastered'
+};
+
+function formatCompletionStateLabel(stateKey = 'not_started') {
+  return COMPLETION_STATE_LABELS[stateKey] || 'Not started';
+}
+
+function enrichLearningModulesWithCollaboration(modules = []) {
+  return (modules || []).map((module) => {
+    const collaborative = state.collaborativeModuleIndex.get(module.slug);
+    if (!collaborative) {
+      return module;
+    }
+    return {
+      ...module,
+      collaborative
+    };
+  });
+}
+
+function initializeCollaborativeModuleState(modules = []) {
+  const completionStates = getCompletionStates();
+  const fallbackState = completionStates[0] || 'not_started';
+
+  (modules || []).forEach((module) => {
+    const concepts = module?.collaborative?.concepts || [];
+    if (!concepts.length) {
+      return;
+    }
+
+    if (!state.activeConceptIdByModule[module.id]) {
+      state.activeConceptIdByModule[module.id] = concepts[0].id;
+    }
+    if (state.completeTogetherByModuleId[module.id] === undefined) {
+      state.completeTogetherByModuleId[module.id] = true;
+    }
+
+    concepts.forEach((concept) => {
+      if (!state.completionStatesByConceptId[concept.id]) {
+        state.completionStatesByConceptId[concept.id] = fallbackState;
+      }
+      if (state.helpfulReactionsByConceptId[concept.id] === undefined) {
+        state.helpfulReactionsByConceptId[concept.id] = 0;
+      }
+      (concept.tasks || []).forEach((task) => {
+        if (state.collaborationDraftsByTaskId[task.id] === undefined) {
+          state.collaborationDraftsByTaskId[task.id] = '';
+        }
+      });
+    });
+  });
 }
 
 function getFlattenedModuleCards(module) {
@@ -1633,6 +1699,10 @@ function openLearningModulePlayer(moduleId) {
   state.activeCardIndex = 0;
   state.activeSubcardIndex = 0;
   state.learningModuleCompleted = false;
+  const concepts = module?.collaborative?.concepts || [];
+  if (concepts.length) {
+    state.activeConceptIdByModule[module.id] = state.activeConceptIdByModule[module.id] || concepts[0].id;
+  }
   renderLearningModulesSection();
 }
 
@@ -1744,84 +1814,163 @@ function renderLearningModulePlayer() {
   }
 
   const { module, flatCards, currentEntry, currentFlatIndex } = snapshot;
-  if (!currentEntry) {
+  const collaborative = module.collaborative;
+  if (!collaborative?.concepts?.length) {
+    if (!currentEntry) {
+      return `
+        <div class="learning-module-player empty">
+          <div class="empty-state">This module does not have lesson cards yet.</div>
+          <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
+        </div>
+      `;
+    }
+    const { topic, card } = currentEntry;
+    const sections = Array.isArray(card.sections) ? card.sections : [];
     return `
-      <div class="learning-module-player empty">
-        <div class="empty-state">This module does not have lesson cards yet.</div>
-        <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
-      </div>
+      <article class="learning-module-player surface-card stack-md">
+        <div class="section-heading dashboard-section-heading">
+          <div><h2>${escapeHtml(module.title)}</h2><p class="muted">Legacy lesson view.</p></div>
+          <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
+        </div>
+        <div class="learning-module-player-card">
+          <div class="learning-module-player-card-header"><div class="stack-xs"><h3>${escapeHtml(topic.topic_title || card.title || 'Learning card')}</h3></div></div>
+          <div class="learning-module-player-sections">${sections.map((section) => `<section class="learning-module-content-section"><h4>${escapeHtml(section.label || 'Section')}</h4>${renderRichText(section.body || '')}</section>`).join('')}</div>
+        </div>
+      </article>
     `;
   }
 
-  const { topic, card, topicIndex } = currentEntry;
-  const sections = Array.isArray(card.sections) ? card.sections : [];
-  const cardPosition = currentFlatIndex + 1;
-  const isFirstCard = currentFlatIndex === 0;
-  const isLastCard = currentFlatIndex === flatCards.length - 1;
+  const concepts = collaborative.concepts || [];
+  const selectedConceptId = state.activeConceptIdByModule[module.id] || concepts[0].id;
+  const selectedConcept = concepts.find((concept) => concept.id === selectedConceptId) || concepts[0];
+  const completionOptions = getCompletionStates();
+  const masteredCount = concepts.filter((concept) => state.completionStatesByConceptId[concept.id] === 'mastered').length;
+  const completionPercent = Math.round((masteredCount / Math.max(1, concepts.length)) * 100);
+  const completeTogetherOn = Boolean(state.completeTogetherByModuleId[module.id]);
+
+  const unresolvedTasks = concepts.reduce((count, concept) => {
+    return count + (concept.tasks || []).filter((task) => !String(state.collaborationDraftsByTaskId[task.id] || '').trim()).length;
+  }, 0);
 
   return `
-    <article class="learning-module-player surface-card stack-md" data-player-module-id="${escapeHtml(module.id)}">
+    <article class="learning-module-player surface-card stack-md collaborative-workspace" data-player-module-id="${escapeHtml(module.id)}">
       <div class="section-heading dashboard-section-heading">
         <div>
-          <p class="eyebrow">Lesson viewer</p>
+          <p class="eyebrow">Collaborative module workspace</p>
           <h2>${escapeHtml(module.title)}</h2>
-          <p class="muted">Stay inside the desktop workspace while moving through the lesson card-by-card.</p>
+          <p class="muted">${escapeHtml(collaborative.workspace_overview || 'Collaboratively complete concepts, formulas, and usage explanations.')}</p>
         </div>
         <button type="button" class="secondary small" data-action="return-module-list">Return to module list</button>
       </div>
 
       <div class="learning-module-progress-grid">
         <div class="learning-module-progress-tile">
-          <span class="eyebrow">Progress</span>
-          <strong>Card ${cardPosition} of ${flatCards.length}</strong>
-          <span class="muted small-text">Topic ${topicIndex + 1} of ${(module.topics || []).length}</span>
+          <span class="eyebrow">Module progress</span>
+          <strong>${completionPercent}% mastered</strong>
+          <span class="muted small-text">${masteredCount} of ${concepts.length} concepts in mastered state</span>
         </div>
         <div class="learning-module-progress-tile">
-          <span class="eyebrow">Current topic</span>
-          <strong>${escapeHtml(topic.topic_title || 'Topic')}</strong>
-          <span class="muted small-text">${escapeHtml(card.subtopic_title || card.title || 'Current lesson')}</span>
+          <span class="eyebrow">Complete Together mode</span>
+          <strong>${completeTogetherOn ? 'Enabled' : 'Paused'}</strong>
+          <span class="muted small-text">${unresolvedTasks} completion tasks are still open across this module</span>
         </div>
       </div>
 
-      <div class="learning-module-player-card">
-        <div class="learning-module-player-card-header" data-player-header>
-          <div class="stack-xs">
-            <span class="pill">${escapeHtml(formatCardTypeLabel(card.card_type))}</span>
-            <h3>${escapeHtml(card.title || 'Learning card')}</h3>
-            ${card.subtopic_title ? `<p class="muted">${escapeHtml(card.subtopic_title)}</p>` : ''}
+      <div class="collaboration-presence-strip">
+        <span class="pill success">Active collaborators</span>
+        <div class="collab-avatar-row">
+          <span class="collab-avatar">AL</span>
+          <span class="collab-avatar">MS</span>
+          <span class="collab-avatar">YK</span>
+          <span class="muted small-text">3 currently active in this module</span>
+        </div>
+      </div>
+
+      <section class="collab-architecture-grid">
+        <article class="learning-module-content-section">
+          <h3>Data model & component structure</h3>
+          <ul class="rich-list">
+            <li><strong>ModuleGraph:</strong> module metadata + concept nodes + prerequisite/application edges.</li>
+            <li><strong>ConceptNode:</strong> explanation layers, formulas, transformer usage, related concepts, completion state.</li>
+            <li><strong>CompletionTask:</strong> guided prompts for text, formulas, derivations, links, and “why it matters” writing.</li>
+            <li><strong>SuggestedLinks:</strong> prerequisite prompts, formula prompts, related explanations, usage links, next concept.</li>
+            <li><strong>UI components:</strong> GraphView, ConceptPanel, CollaborationPanel, SuggestedLinksPanel, ProgressRail.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="collab-workspace-grid">
+        <aside class="learning-module-content-section">
+          <h3>Concept graph</h3>
+          <div class="concept-graph-list">
+            ${concepts.map((concept) => {
+              const stateKey = state.completionStatesByConceptId[concept.id] || completionOptions[0];
+              const selected = concept.id === selectedConcept.id;
+              return `
+                <button type="button" class="concept-node-button ${selected ? 'is-active' : ''}" data-action="select-concept" data-module-id="${escapeHtml(module.id)}" data-concept-id="${escapeHtml(concept.id)}">
+                  <div class="stack-xs">
+                    <strong>${escapeHtml(concept.title)}</strong>
+                    <span class="muted small-text">Prereqs: ${escapeHtml((concept.prerequisites || []).join(', ') || 'None')}</span>
+                    <span class="muted small-text">Links: ${(concept.related_concepts || []).length + (concept.applications || []).length}</span>
+                  </div>
+                  <span class="pill">${escapeHtml(formatCompletionStateLabel(stateKey))}</span>
+                </button>
+              `;
+            }).join('')}
           </div>
-        </div>
-        <div class="learning-module-player-sections" data-player-sections>
-          ${sections.map((section) => `
-            <section class="learning-module-content-section">
-              <h4>${escapeHtml(section.label || 'Section')}</h4>
-              ${renderRichText(section.body || '')}
-            </section>
-          `).join('')}
-        </div>
-      </div>
+        </aside>
 
-      <div class="learning-module-player-callout ${state.learningModuleCompleted || isLastCard ? 'is-visible' : ''}" data-player-callout>
-        ${(state.learningModuleCompleted || isLastCard) ? `
-        <div class="callout info">
-          <strong>${state.learningModuleCompleted ? 'Module completed.' : 'Final card reached.'}</strong>
-          <div>${state.learningModuleCompleted ? 'You have reached the end of this guided lesson flow.' : 'Use Next once more to mark the lesson as completed, or go Back to revisit earlier cards.'}</div>
-        </div>` : ''}
-      </div>
+        <article class="learning-module-content-section concept-detail-panel">
+          <div class="section-heading compact">
+            <div>
+              <h3>${escapeHtml(selectedConcept.title)}</h3>
+              <p class="muted small-text">Rich concept panel with multi-level explanations and formula completion.</p>
+            </div>
+            <label class="small-text">State
+              <select data-action="set-concept-state" data-concept-id="${escapeHtml(selectedConcept.id)}">
+                ${completionOptions.map((option) => `<option value="${escapeHtml(option)}" ${state.completionStatesByConceptId[selectedConcept.id] === option ? 'selected' : ''}>${escapeHtml(formatCompletionStateLabel(option))}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <div class="stack-sm">
+            <div><strong>Simple explanation</strong><p>${escapeHtml(selectedConcept.simple_explanation || '')}</p></div>
+            <div><strong>Formal explanation</strong><p>${escapeHtml(selectedConcept.formal_explanation || '')}</p></div>
+            <div><strong>Visual intuition</strong><p>${escapeHtml(selectedConcept.visual_intuition || '')}</p></div>
+            <div><strong>Formulas</strong>${selectedConcept.formulas.map((formula) => renderRichText(`$${formula}$`)).join('')}</div>
+            <div><strong>Usage in transformers</strong><p>${escapeHtml(selectedConcept.usage_in_transformers || '')}</p></div>
+            <div><strong>Related concepts</strong><p>${escapeHtml((selectedConcept.related_concepts || []).join(', ') || 'None')}</p></div>
+          </div>
+          <div class="reaction-row">
+            <button type="button" class="secondary small" data-action="react-helpful" data-concept-id="${escapeHtml(selectedConcept.id)}">👍 Helpful (${state.helpfulReactionsByConceptId[selectedConcept.id] || 0})</button>
+          </div>
+        </article>
 
-      <div class="learning-module-player-footer">
-        <button type="button" class="secondary" data-action="module-back" data-player-back ${isFirstCard ? 'disabled' : ''}>Back</button>
-        <div class="learning-module-progress-bar" aria-hidden="true">
-          <span data-player-progress style="width: ${(cardPosition / flatCards.length) * 100}%"></span>
-        </div>
-        <button
-          type="button"
-          data-action="module-next"
-          data-player-next
-        >
-          ${state.learningModuleCompleted ? 'Completed' : isLastCard ? 'Finish module' : 'Next'}
-        </button>
-      </div>
+        <aside class="learning-module-content-section">
+          <div class="section-heading compact">
+            <div><h3>Complete Together</h3><p class="muted small-text">Guided fill-in tasks and collaborative edits.</p></div>
+            <button type="button" class="secondary small" data-action="toggle-complete-together" data-module-id="${escapeHtml(module.id)}">${completeTogetherOn ? 'Pause mode' : 'Resume mode'}</button>
+          </div>
+          <div class="stack-sm">
+            ${(selectedConcept.tasks || []).map((task) => `
+              <label class="stack-xs">
+                <strong>${escapeHtml(formatCardTypeLabel(task.type).replaceAll('-', ' '))}</strong>
+                <span class="muted small-text">${escapeHtml(task.prompt || '')}</span>
+                <textarea ${!completeTogetherOn ? 'disabled' : ''} rows="3" data-action="task-draft" data-task-id="${escapeHtml(task.id)}" placeholder="Add your collaborative completion here...">${escapeHtml(state.collaborationDraftsByTaskId[task.id] || '')}</textarea>
+              </label>
+            `).join('')}
+          </div>
+          <div class="suggested-links-panel">
+            <h4>Suggested completion links</h4>
+            <ul class="rich-list">
+              ${(selectedConcept.suggested_links?.prerequisites || []).map((item) => `<li><strong>Prerequisite:</strong> ${escapeHtml(item)}</li>`).join('')}
+              ${(selectedConcept.suggested_links?.formulas || []).map((item) => `<li><strong>Formula to complete:</strong> ${escapeHtml(item)}</li>`).join('')}
+              ${(selectedConcept.suggested_links?.related_explanations || []).map((item) => `<li><strong>Related explanation:</strong> ${escapeHtml(item)}</li>`).join('')}
+              ${(selectedConcept.suggested_links?.usage_links || []).map((item) => `<li><strong>Usage link:</strong> ${escapeHtml(item)}</li>`).join('')}
+              ${selectedConcept.suggested_links?.next_concept ? `<li><strong>Next concept:</strong> ${escapeHtml(selectedConcept.suggested_links.next_concept)}</li>` : ''}
+            </ul>
+          </div>
+        </aside>
+      </section>
     </article>
   `;
 }
@@ -1851,6 +2000,9 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
         : backendChecking
           ? 'Checking Supabase sync status. You can browse now and connect as soon as sync is ready.'
           : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
+  const conceptCount = module?.collaborative?.concepts?.length || 0;
+  const masteredCount = (module?.collaborative?.concepts || []).filter((concept) => state.completionStatesByConceptId[concept.id] === 'mastered').length;
+  const moduleProgressPercent = conceptCount ? Math.round((masteredCount / conceptCount) * 100) : 0;
 
   return `
     <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}" data-module-card-id="${escapeHtml(module.id)}">
@@ -1913,6 +2065,7 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
         </div>
 
         <p class="muted small-text">${escapeHtml(helperText)}</p>
+        ${conceptCount ? `<p class="muted small-text">Collaborative concept graph ready: ${masteredCount}/${conceptCount} mastered (${moduleProgressPercent}%). Includes topic overview, subtopics, formulas, concept relationships, transformer usage, and guided fill-in tasks.</p>` : ''}
 
         <div class="learning-module-collapsible ${isExpanded ? 'is-open' : ''}">
           <div class="learning-module-collapsible-inner">
@@ -2091,7 +2244,8 @@ async function loadLearningModules({ force = false } = {}) {
   state.learningModulesError = '';
   const hasExistingModules = Array.isArray(state.learningModules) && state.learningModules.length > 0;
   if (!hasExistingModules) {
-    state.learningModules = getStarterLearningModules();
+    state.learningModules = enrichLearningModulesWithCollaboration(getStarterLearningModules());
+    initializeCollaborativeModuleState(state.learningModules);
   }
   setLearningModulesLoadingStatus();
   renderLearningModulesSection();
@@ -2116,7 +2270,8 @@ async function loadLearningModules({ force = false } = {}) {
       return;
     }
 
-    state.learningModules = modulePayload?.modules || [];
+    state.learningModules = enrichLearningModulesWithCollaboration(modulePayload?.modules || []);
+    initializeCollaborativeModuleState(state.learningModules);
     logStructured('log', '[Connect.Me] Learning modules public live query resolved', {
       source: modulePayload?.source || 'unknown',
       liveQuerySucceeded: modulePayload?.source !== 'fallback',
@@ -3407,6 +3562,32 @@ async function bindEvents() {
       return;
     }
 
+    if (actionButton.dataset.action === 'select-concept') {
+      const conceptId = actionButton.dataset.conceptId || '';
+      if (moduleId && conceptId) {
+        state.activeConceptIdByModule[moduleId] = conceptId;
+        renderLearningModulesSection();
+      }
+      return;
+    }
+
+    if (actionButton.dataset.action === 'react-helpful') {
+      const conceptId = actionButton.dataset.conceptId || '';
+      if (conceptId) {
+        state.helpfulReactionsByConceptId[conceptId] = (state.helpfulReactionsByConceptId[conceptId] || 0) + 1;
+        renderLearningModulesSection();
+      }
+      return;
+    }
+
+    if (actionButton.dataset.action === 'toggle-complete-together') {
+      if (moduleId) {
+        state.completeTogetherByModuleId[moduleId] = !state.completeTogetherByModuleId[moduleId];
+        renderLearningModulesSection();
+      }
+      return;
+    }
+
     if (actionButton.dataset.action === 'module-back') {
       moveLearningModuleCard(-1);
       return;
@@ -3427,6 +3608,34 @@ async function bindEvents() {
       state.expandedLearningModuleUsers.add(moduleSlug);
       rerenderLearningModuleCard(moduleId);
       await loadLearningModuleUsers(moduleSlug);
+    }
+  });
+
+  els.learningModulesList?.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) {
+      return;
+    }
+    if (target.dataset.action === 'set-concept-state') {
+      const conceptId = target.dataset.conceptId || '';
+      const nextState = target.value || 'not_started';
+      if (conceptId) {
+        state.completionStatesByConceptId[conceptId] = nextState;
+        renderLearningModulesSection();
+      }
+    }
+  });
+
+  els.learningModulesList?.addEventListener('input', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    if (target.dataset.action === 'task-draft') {
+      const taskId = target.dataset.taskId || '';
+      if (taskId) {
+        state.collaborationDraftsByTaskId[taskId] = target.value || '';
+      }
     }
   });
 
