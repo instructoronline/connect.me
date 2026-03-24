@@ -4,6 +4,10 @@
 create extension if not exists pgcrypto;
 create extension if not exists pg_cron;
 
+drop function if exists get_active_users_for_domain(text);
+drop function if exists purge_expired_history();
+drop function if exists delete_my_account_completely();
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null,
