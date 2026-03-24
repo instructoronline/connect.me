@@ -1,3 +1,5 @@
+import katex from 'katex';
+
 const richTextCache = new Map();
 const mathMarkupCache = new Map();
 
@@ -40,9 +42,7 @@ function wrapMath(inner, displayMode = false) {
 }
 
 function hasKatexRenderer() {
-  return typeof globalThis !== 'undefined'
-    && globalThis.katex
-    && typeof globalThis.katex.renderToString === 'function';
+  return Boolean(katex && typeof katex.renderToString === 'function');
 }
 
 function normalizePlaceholderToken(value = '') {
@@ -144,7 +144,7 @@ function renderKaTeX(expression = '', { displayMode = false } = {}) {
     return null;
   }
   try {
-    return globalThis.katex.renderToString(normalizeLatex(expression), {
+    return katex.renderToString(normalizeLatex(expression), {
       throwOnError: true,
       displayMode,
       strict: 'ignore',
