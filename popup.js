@@ -2325,7 +2325,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     gatedByAuth: false
   });
 
-  const { resolvedUuid, moduleUuidBySlug } = resolveLearningModuleUuid(moduleId, moduleSlug);
+  const { resolvedUuid } = resolveLearningModuleUuid(moduleId, moduleSlug);
   const connectionTrackingId = resolvedUuid || moduleId || moduleSlug;
 
   if (state.moduleConnectionIds.has(connectionTrackingId) || state.pendingModuleConnectionIds.has(connectionTrackingId)) {
@@ -2357,6 +2357,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   let connectResult = null;
 
   try {
+    const moduleUuidBySlug = buildLearningModuleUuidLookup();
     connectResult = await connectCurrentUserToLearningModule(resolvedUuid || moduleId, { moduleSlug, moduleUuidBySlug });
     logStructured('log', '[Connect.Me] Learning module connect result', {
       starterId: moduleId,
