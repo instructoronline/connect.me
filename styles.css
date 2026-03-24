@@ -53,6 +53,23 @@ body {
   min-height: 100vh;
 }
 
+.app-bootstrap-state {
+  display: none;
+  margin: 0 auto;
+  padding: 28px 24px;
+  max-width: 560px;
+  color: var(--muted);
+}
+
+/* Fix: hide desktop workspace chrome until the first async auth/state sync completes to prevent pre-login flicker. */
+.desktop-body.app-initializing .desktop-dashboard {
+  display: none;
+}
+
+.desktop-body.app-initializing .app-bootstrap-state {
+  display: block;
+}
+
 .popup-body {
   width: 420px;
   min-width: 420px;
