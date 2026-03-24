@@ -1130,6 +1130,20 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
   };
 }
 
+function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Learning Modules are synced with Supabase and support saved connections.' } = {}) {
+  state.learningModulesStatus = {
+    ...getLearningModulesStatus(),
+    source: 'supabase',
+    persistenceAvailable: true,
+    setupRequired: false,
+    statusBadge: badge,
+    statusTone: 'success',
+    statusMessage: message,
+    fallbackDetail: '',
+    errorMessage: ''
+  };
+}
+
 function renderLearningModuleUsers(module) {
   const status = getLearningModulesStatus();
   const isUsersOpen = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug);
@@ -1161,7 +1175,7 @@ function renderLearningModuleUsers(module) {
           `).join('')}
         </div>
       `
-      : '<div class="empty-state">No users connected yet.</div>';
+      : '<div class="empty-state">No connected users yet.</div>';
   }
 
   return `
@@ -1717,13 +1731,15 @@ async function loadLearningModules({ force = false } = {}) {
           try {
             remoteConnections = await fetchLearningModuleConnectionsForCurrentUser();
           } catch (error) {
-            setLearningModulesFallbackStatus({
-              setupRequired: isLearningModuleSetupError(error?.message),
-              message: 'Learning Modules connections are being saved locally while Supabase sync is unavailable.',
-              detail: isLearningModuleSetupError(error?.message)
-                ? 'The learning-module connection table or related Supabase function is missing. Run the bundled SQL to enable server-side persistence.'
-                : 'Supabase could not load your saved module connections right now, so new connections will stay queued locally until it recovers.'
-            });
+            if (isLearningModuleSetupError(error?.message)) {
+              setLearningModulesFallbackStatus({
+                setupRequired: true,
+                message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
+                detail: 'The learning-module connection table or related Supabase function is missing. Run the bundled SQL to enable server-side persistence.'
+              });
+            } else {
+              remoteConnections = [];
+            }
           }
         }
       } catch (_error) {
@@ -1827,8 +1843,14 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       );
     } else {
       state.pendingLocalModuleConnectionIds.delete(moduleId);
+      setLearningModulesSyncedStatus({
+        badge: 'Connected',
+        message: 'Your learning-module connection was saved to Supabase.'
+      });
       state.learningModuleUsersBySlug.delete(moduleSlug);
       setStatus('You are now connected to this learning module.', 'success');
+
+      await loadLearningModules({ force: false });
 
       if (state.expandedLearningModuleUsers.has(moduleSlug)) {
         await loadLearningModuleUsers(moduleSlug, { force: true });

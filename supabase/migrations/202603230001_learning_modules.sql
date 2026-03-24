@@ -99,17 +99,17 @@ as $$
          lm.slug as module_slug,
          coalesce(
            nullif(trim(concat(
-             case when p.share_first_name then p.first_name else '' end,
-             case when p.share_first_name and p.share_last_name then ' ' else '' end,
-             case when p.share_last_name then p.last_name else '' end
+             case when coalesce(p.share_first_name, true) then coalesce(p.first_name, '') else '' end,
+             case when coalesce(p.share_first_name, true) and coalesce(p.share_last_name, true) then ' ' else '' end,
+             case when coalesce(p.share_last_name, true) then coalesce(p.last_name, '') else '' end
            )), ''),
            'Connect.Me member'
          ) as public_name,
-         case when p.share_avatar then p.avatar_url else '' end as avatar_url,
+         case when coalesce(p.share_avatar, false) then coalesce(p.avatar_url, '') else '' end as avatar_url,
          lmc.connected_at
   from public.learning_module_connections lmc
   join public.learning_modules lm on lm.id = lmc.module_id
-  join public.profiles p on p.id = lmc.user_id
+  left join public.profiles p on p.id = lmc.user_id
   where lm.slug = requested_module_slug
   order by lmc.connected_at desc;
 $$;
