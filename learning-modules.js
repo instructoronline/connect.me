@@ -1870,6 +1870,8 @@ function normalizeStarterModules() {
 
         return {
           id: `starter-card-${module.slug}-${topicIndex + 1}-${cardIndex + 1}`,
+          local_id: `starter-card-${module.slug}-${topicIndex + 1}-${cardIndex + 1}`,
+          db_id: null,
           module_id: moduleId,
           topic_id: topicId,
           sort_order: cardIndex + 1,
@@ -1880,6 +1882,8 @@ function normalizeStarterModules() {
 
       return {
         id: topicId,
+        local_id: topicId,
+        db_id: null,
         module_id: moduleId,
         sort_order: topic.sort_order ?? topicIndex + 1,
         cards,
@@ -1889,6 +1893,8 @@ function normalizeStarterModules() {
 
     return {
       id: moduleId,
+      local_id: moduleId,
+      db_id: null,
       sort_order: module.sort_order ?? moduleIndex + 1,
       topics,
       ...clone(module)
