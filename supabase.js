@@ -1588,7 +1588,7 @@ export async function fetchLearningModules() {
 
     const [modules, topics] = await Promise.all([
       requestLearningModuleRows('learning_modules', '?select=id,slug,title,description,icon,sort_order&order=sort_order.asc'),
-      requestLearningModuleRows('learning_module_topics', '?select=id,module_id,topic_title,sort_order&order=module_id.asc,sort_order.asc')
+      requestLearningModuleRows('learning_module_topics', '?select=id,module_id,topic_title,summary,sort_order&order=module_id.asc,sort_order.asc')
     ]);
     let cards = [];
     let usingBundledCards = false;
