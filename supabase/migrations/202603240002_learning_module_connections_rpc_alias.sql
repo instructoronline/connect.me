@@ -1,5 +1,8 @@
--- Learning Modules sync backend setup repair migration.
+-- Learning Modules compatibility repair.
+-- Ensures required Learning Modules tables, RLS, and RPC functions exist.
 -- Safe to run multiple times.
+
+create extension if not exists pgcrypto;
 
 create table if not exists public.learning_modules (
   id uuid primary key default gen_random_uuid(),
@@ -122,8 +125,7 @@ as $$
   order by lmc.connected_at desc;
 $$;
 
-grant execute on function public.get_learning_module_connected_users(text) to anon, authenticated;
-
+-- Compatibility alias for environments that call a legacy RPC name.
 create or replace function public.get_learning_module_connections(requested_module_slug text)
 returns table (
   module_id uuid,
@@ -140,53 +142,5 @@ as $$
   from public.get_learning_module_connected_users(requested_module_slug);
 $$;
 
+grant execute on function public.get_learning_module_connected_users(text) to anon, authenticated;
 grant execute on function public.get_learning_module_connections(text) to anon, authenticated;
-
-insert into public.learning_modules (slug, title, description, icon, sort_order)
-values
-  (
-    'foundations-of-transformers',
-    'Foundations of Transformers',
-    'An introductory module covering the core ideas behind transformers, including sequence modeling, attention, tokens, embeddings, and why transformers became central to modern AI.',
-    'book-open',
-    1
-  ),
-  (
-    'mathematical-foundations-of-transformers',
-    'Mathematical Foundations of Transformers',
-    'A mathematically focused module covering the linear algebra, probability, optimization, and matrix operations that support transformer models.',
-    'book-open',
-    2
-  ),
-  (
-    'foundations-of-transformer-architecture',
-    'Foundations of Transformer Architecture',
-    'A structural module explaining the internal components of transformer systems, including attention blocks, feed-forward layers, residual connections, normalization, and multi-head mechanisms.',
-    'book-open',
-    3
-  )
-on conflict (slug) do update
-set title = excluded.title,
-    description = excluded.description,
-    icon = excluded.icon,
-    sort_order = excluded.sort_order;
-
-with seeded_topics as (
-  select 'foundations-of-transformers'::text as module_slug, 'Why transformers changed sequence modeling'::text as topic_title, 1 as sort_order
-  union all select 'foundations-of-transformers', 'Tokens and embeddings', 2
-  union all select 'foundations-of-transformers', 'Attention as the lesson engine', 3
-  union all select 'mathematical-foundations-of-transformers', 'Vectors, matrices, and similarity', 1
-  union all select 'mathematical-foundations-of-transformers', 'Softmax and probability flow', 2
-  union all select 'mathematical-foundations-of-transformers', 'Optimization and training stability', 3
-  union all select 'foundations-of-transformer-architecture', 'Query, key, and value roles', 1
-  union all select 'foundations-of-transformer-architecture', 'Multi-head attention and feed-forward blocks', 2
-  union all select 'foundations-of-transformer-architecture', 'Residuals, normalization, and model families', 3
-)
-insert into public.learning_module_topics (module_id, topic_title, sort_order)
-select lm.id,
-       st.topic_title,
-       st.sort_order
-from seeded_topics st
-join public.learning_modules lm on lm.slug = st.module_slug
-on conflict (module_id, topic_title) do update
-set sort_order = excluded.sort_order;

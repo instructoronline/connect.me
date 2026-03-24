@@ -350,6 +350,24 @@ $$;
 
 grant execute on function public.get_learning_module_connected_users(text) to anon, authenticated;
 
+create or replace function public.get_learning_module_connections(requested_module_slug text)
+returns table (
+  module_id uuid,
+  module_slug text,
+  public_name text,
+  avatar_url text,
+  connected_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select *
+  from public.get_learning_module_connected_users(requested_module_slug);
+$$;
+
+grant execute on function public.get_learning_module_connections(text) to anon, authenticated;
+
 create or replace view public.top_active_sites as
 select ap.domain,
        count(*)::int as active_user_count,
