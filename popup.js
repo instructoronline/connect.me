@@ -1933,10 +1933,10 @@ function renderLearningModulePlayer() {
             </label>
           </div>
           <div class="stack-sm">
-            <div><strong>Simple explanation</strong><p>${escapeHtml(selectedConcept.simple_explanation || '')}</p></div>
-            <div><strong>Formal explanation</strong><p>${escapeHtml(selectedConcept.formal_explanation || '')}</p></div>
-            <div><strong>Visual intuition</strong><p>${escapeHtml(selectedConcept.visual_intuition || '')}</p></div>
-            <div><strong>Formulas</strong>${selectedConcept.formulas.map((formula) => renderRichText(`$${formula}$`)).join('')}</div>
+            <div><strong>Simple explanation</strong>${renderRichText(selectedConcept.simple_explanation || '')}</div>
+            <div><strong>Formal explanation</strong>${renderRichText(selectedConcept.formal_explanation || '')}</div>
+            <div><strong>Visual intuition</strong>${renderRichText(selectedConcept.visual_intuition || '')}</div>
+            <div><strong>Formulas</strong>${selectedConcept.formulas.map((formula) => renderRichText(`$$${formula}$$`)).join('')}</div>
             <div><strong>Usage in transformers</strong><p>${escapeHtml(selectedConcept.usage_in_transformers || '')}</p></div>
             <div><strong>Related concepts</strong><p>${escapeHtml((selectedConcept.related_concepts || []).join(', ') || 'None')}</p></div>
           </div>
@@ -1954,7 +1954,7 @@ function renderLearningModulePlayer() {
             ${(selectedConcept.tasks || []).map((task) => `
               <label class="stack-xs">
                 <strong>${escapeHtml(formatCardTypeLabel(task.type).replaceAll('-', ' '))}</strong>
-                <span class="muted small-text">${escapeHtml(task.prompt || '')}</span>
+                <div class="muted small-text">${renderRichText(task.prompt || '')}</div>
                 <textarea ${!completeTogetherOn ? 'disabled' : ''} rows="3" data-action="task-draft" data-task-id="${escapeHtml(task.id)}" placeholder="Add your collaborative completion here...">${escapeHtml(state.collaborationDraftsByTaskId[task.id] || '')}</textarea>
               </label>
             `).join('')}
@@ -1963,7 +1963,7 @@ function renderLearningModulePlayer() {
             <h4>Suggested completion links</h4>
             <ul class="rich-list">
               ${(selectedConcept.suggested_links?.prerequisites || []).map((item) => `<li><strong>Prerequisite:</strong> ${escapeHtml(item)}</li>`).join('')}
-              ${(selectedConcept.suggested_links?.formulas || []).map((item) => `<li><strong>Formula to complete:</strong> ${escapeHtml(item)}</li>`).join('')}
+              ${(selectedConcept.suggested_links?.formulas || []).map((item) => `<li><strong>Formula to complete:</strong> ${renderRichText(`$${item}$`)}</li>`).join('')}
               ${(selectedConcept.suggested_links?.related_explanations || []).map((item) => `<li><strong>Related explanation:</strong> ${escapeHtml(item)}</li>`).join('')}
               ${(selectedConcept.suggested_links?.usage_links || []).map((item) => `<li><strong>Usage link:</strong> ${escapeHtml(item)}</li>`).join('')}
               ${selectedConcept.suggested_links?.next_concept ? `<li><strong>Next concept:</strong> ${escapeHtml(selectedConcept.suggested_links.next_concept)}</li>` : ''}
