@@ -95,6 +95,7 @@ const state = {
     phase: 'booting',
     contentState: 'booting',
     backendState: 'booting',
+    backendAvailability: 'checking',
     authActionState: 'signed_out',
     persistenceAvailable: false,
     setupRequired: false,
@@ -1195,6 +1196,7 @@ function getLearningModulesStatus() {
     phase: 'booting',
     contentState: 'booting',
     backendState: 'booting',
+    backendAvailability: 'checking',
     authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: false,
     setupRequired: false,
@@ -1213,6 +1215,7 @@ function setLearningModulesLoadingStatus({ message = 'Loading learning modules a
     phase: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
     contentState: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
     backendState: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
+    backendAvailability: 'checking',
     authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: hasVisibleModules ? getLearningModulesStatus().persistenceAvailable : false,
     setupRequired: false,
@@ -1253,7 +1256,8 @@ function renderLearningModulesStatus() {
     message: status.statusMessage || '',
     detail: status.fallbackDetail || '',
     setupRequired: Boolean(status.setupRequired),
-    persistenceAvailable: Boolean(status.persistenceAvailable)
+    persistenceAvailable: Boolean(status.persistenceAvailable),
+    backendAvailability: status.backendAvailability || 'checking'
   });
   // Fix: avoid flicker by skipping redundant status DOM writes when poll cycles do not change backend state.
   if (state.lastLearningModulesStatusSignature === statusSignature) {
@@ -1275,12 +1279,16 @@ function renderLearningModulesStatus() {
   }
 
   if (els.learningModulesStatusCallout) {
-    const tone = status.persistenceAvailable ? 'subtle' : status.setupRequired ? 'info' : 'subtle';
-    const actionCopy = status.persistenceAvailable
+    const backendAvailable = status.backendAvailability === 'available';
+    const backendChecking = status.backendAvailability === 'checking';
+    const tone = backendAvailable ? 'subtle' : status.setupRequired ? 'info' : 'subtle';
+    const actionCopy = backendAvailable
       ? 'Connecting a module requires sign-in and only exposes safe public-facing user identity details.'
-      : status.setupRequired
-        ? 'Apply the Learning Modules migration to enable Supabase syncing, topic seeding, and saved connections.'
-        : 'You can still browse all starter modules now, and Connect Me will queue local saves until Supabase is reachable again.';
+      : backendChecking
+        ? 'Checking Supabase sync readiness now. Learning modules remain available while this finishes.'
+        : status.setupRequired
+          ? 'Apply the Learning Modules migration to enable Supabase syncing, topic seeding, and saved connections.'
+          : 'You can still browse all starter modules now, and Connect Me will queue local saves until Supabase is reachable again.';
 
     els.learningModulesStatusCallout.className = `callout ${tone}`;
     els.learningModulesStatusCallout.innerHTML = `
@@ -1322,27 +1330,22 @@ function renderLearningModuleBackendDiagnostics() {
   )).join('');
 
   const moduleStatus = getLearningModulesStatus();
-  const summaryTone = moduleStatus.backendState === 'live_ready'
+  const backendAvailability = moduleStatus.backendAvailability || 'checking';
+  const summaryTone = backendAvailability === 'available'
     ? 'success'
     : moduleStatus.backendState === 'auth_pending'
       ? 'warning'
-    : moduleStatus.backendState === 'unavailable'
-      ? 'error'
-      : moduleStatus.backendState === 'degraded'
-      ? 'error'
-      : moduleStatus.backendState === 'booting' || moduleStatus.backendState === 'loading_content' || moduleStatus.backendState === 'reconciling_live_rows'
-        ? 'warning'
+      : backendAvailability === 'unavailable'
+        ? 'error'
         : 'warning';
-  const summaryText = moduleStatus.backendState === 'live_ready'
+  const summaryText = backendAvailability === 'available'
     ? 'Sync backend ready'
     : moduleStatus.backendState === 'auth_pending'
       ? 'Awaiting sign-in'
-    : moduleStatus.backendState === 'booting' || moduleStatus.backendState === 'loading_content' || moduleStatus.backendState === 'reconciling_live_rows'
-      ? 'Reconciling'
-      : moduleStatus.backendState === 'degraded' && moduleStatus.setupRequired
-        ? 'Setup required'
-        : moduleStatus.backendState === 'degraded'
-          ? 'Degraded'
+      : backendAvailability === 'checking'
+        ? 'Checking sync readiness'
+        : moduleStatus.setupRequired
+          ? 'Setup required'
           : 'Backend unavailable';
   const detailText = diagnostics.failingRequirement
     ? `Blocking requirement: ${diagnostics.failingRequirement}`
@@ -1382,7 +1385,9 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
     };
     state.learningModulesStatus = {
       ...getLearningModulesStatus(),
-      backendState: 'auth_pending'
+      backendState: 'auth_pending',
+      backendAvailability: 'checking',
+      persistenceAvailable: false
     };
     renderLearningModulesSection();
     renderLearningModuleBackendDiagnostics();
@@ -1390,6 +1395,13 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
   }
 
   try {
+    state.learningModulesStatus = {
+      ...getLearningModulesStatus(),
+      backendState: 'checking',
+      backendAvailability: 'checking',
+      persistenceAvailable: false
+    };
+    await ensureBuiltInConfig();
     const diagnostics = await diagnoseLearningModulesBackend();
     state.learningModuleBackendDiagnostics = {
       ...diagnostics,
@@ -1399,7 +1411,9 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
       clearLearningModulesLiveFailure();
       state.learningModulesStatus = {
         ...getLearningModulesStatus(),
-        backendState: 'live_ready'
+        backendState: 'live_ready',
+        backendAvailability: 'available',
+        persistenceAvailable: true
       };
       if (state.user) {
         try {
@@ -1434,7 +1448,9 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
     // Fix: classify diagnostics errors as degraded so transient init/network failures do not pin the UI as unavailable.
     state.learningModulesStatus = {
       ...getLearningModulesStatus(),
-      backendState: 'degraded'
+      backendState: 'degraded',
+      backendAvailability: 'unavailable',
+      persistenceAvailable: false
     };
   }
 
@@ -1463,6 +1479,7 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
     phase: setupRequired ? 'degraded' : 'fallback_ready',
     contentState: 'fallback_ready',
     backendState: setupRequired ? 'degraded' : 'unavailable',
+    backendAvailability: 'unavailable',
     authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: false,
     setupRequired,
@@ -1485,6 +1502,7 @@ function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Lear
     phase: 'live_ready',
     contentState: 'live_ready',
     backendState: 'live_ready',
+    backendAvailability: 'available',
     authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: true,
     setupRequired: false,
@@ -1498,13 +1516,17 @@ function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Lear
 
 function renderLearningModuleUsers(module) {
   const status = getLearningModulesStatus();
-  const isUsersOpen = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug);
+  const backendAvailable = status.backendAvailability === 'available';
+  const backendChecking = status.backendAvailability === 'checking';
+  const isUsersOpen = backendAvailable && state.expandedLearningModuleUsers.has(module.slug);
   const isUsersLoading = state.learningModuleUsersLoading.has(module.slug);
   const usersError = state.learningModuleUsersErrors.get(module.slug) || '';
   const connectedUsers = state.learningModuleUsersBySlug.get(module.slug) || [];
 
   let content = '<div class="empty-state">Expand this area to view connected users.</div>';
-  if (!status.persistenceAvailable) {
+  if (backendChecking) {
+    content = '<div class="empty-state">Checking Supabase sync readiness for connected-user lists…</div>';
+  } else if (!backendAvailable) {
     content = '<div class="empty-state">Connected-user lists will appear after Supabase sync is available again. Local queued saves still update your own state immediately.</div>';
   } else if (isUsersOpen && isUsersLoading) {
     content = '<div class="empty-state">Loading connected users…</div>';
@@ -1531,7 +1553,7 @@ function renderLearningModuleUsers(module) {
   }
 
   return `
-    <div class="learning-module-collapsible ${isUsersOpen || !status.persistenceAvailable ? 'is-open' : ''}">
+    <div class="learning-module-collapsible ${isUsersOpen || !backendAvailable ? 'is-open' : ''}">
       <div class="learning-module-collapsible-inner">
         <div class="learning-module-section-block learning-module-users-panel stack-sm">
           <div class="section-heading compact">
@@ -1539,7 +1561,7 @@ function renderLearningModuleUsers(module) {
               <h3>Connected users</h3>
               <p class="muted small-text">Only safe public-facing identity details are shown here.</p>
             </div>
-            <span class="pill ${status.persistenceAvailable && connectedUsers.length ? 'success' : status.persistenceAvailable ? '' : 'warning'}">${escapeHtml(status.persistenceAvailable ? `${connectedUsers.length} connected` : 'Sync unavailable')}</span>
+            <span class="pill ${backendAvailable && connectedUsers.length ? 'success' : backendAvailable ? '' : 'warning'}">${escapeHtml(backendChecking ? 'Checking sync…' : backendAvailable ? `${connectedUsers.length} connected` : 'Sync unavailable')}</span>
           </div>
           ${content}
         </div>
@@ -1795,7 +1817,9 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
   const isQueued = connectionDisplay.queued;
   const isConnecting = state.pendingModuleConnectionIds.has(resolvedModuleDbId);
   const topics = Array.isArray(module.topics) ? module.topics : [];
-  const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
+  const backendAvailable = status.backendAvailability === 'available';
+  const backendChecking = status.backendAvailability === 'checking';
+  const userToggleLabel = backendAvailable && state.expandedLearningModuleUsers.has(module.slug)
     ? 'Hide all users connected'
     : 'Show all users connected';
   const canConnect = !isConnecting && !connectionDisplay.isSaved;
@@ -1805,9 +1829,11 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
       ? (status.setupRequired
         ? 'Saved locally. Run the bundled Learning Modules SQL to sync this connection into Supabase.'
         : 'Saved locally and will sync automatically once Supabase becomes available again.')
-      : status.persistenceAvailable
+      : backendAvailable
         ? 'Connect yourself to save this module to your Supabase-backed workspace.'
-        : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
+        : backendChecking
+          ? 'Checking Supabase sync status. You can browse now and connect as soon as sync is ready.'
+          : 'Supabase is currently unavailable, but you can still save this module locally and let it sync later.';
 
   return `
     <article class="learning-module-card ${isExpanded ? 'is-expanded' : ''}" data-module-card-id="${escapeHtml(module.id)}">
@@ -1824,7 +1850,7 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
               <span class="pill">${escapeHtml(`${topics.length} topic${topics.length === 1 ? '' : 's'}`)}</span>
               ${isConnected ? '<span class="pill success">Connected</span>' : ''}
               ${isQueued ? '<span class="pill warning">Queued sync</span>' : ''}
-              ${!status.persistenceAvailable ? '<span class="pill warning">Fallback</span>' : ''}
+              ${backendChecking ? '<span class="pill">Checking sync</span>' : !backendAvailable ? '<span class="pill warning">Fallback</span>' : ''}
             </div>
             <div>
               <h3>${escapeHtml(module.title)}</h3>
@@ -1842,7 +1868,7 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
             data-module-id="${escapeHtml(resolvedModuleDbId)}"
             data-module-slug="${escapeHtml(module.slug)}"
             ${!canConnect ? 'disabled' : ''}
-            title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : status.persistenceAvailable ? 'Save this learning module to your profile.' : 'Save locally now and sync to Supabase later.')}"
+            title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : backendAvailable ? 'Save this learning module to your profile.' : backendChecking ? 'Checking Supabase sync status.' : 'Save locally now and sync to Supabase later.')}"
           >
             <span class="learning-module-button-icon">${renderConnectionIcon()}</span>
             <span>${isConnecting ? 'Connecting…' : isConnected ? 'Connected' : isQueued ? 'Queued locally' : 'Connect Me'}</span>
@@ -1862,8 +1888,8 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
             data-action="toggle-users"
             data-module-id="${escapeHtml(resolvedModuleDbId)}"
             data-module-slug="${escapeHtml(module.slug)}"
-            ${!status.persistenceAvailable ? 'disabled' : ''}
-            title="${escapeHtml(status.persistenceAvailable ? 'View everyone who connected to this module.' : 'Connected-user lists require Supabase syncing.')}"
+            ${!backendAvailable ? 'disabled' : ''}
+            title="${escapeHtml(backendAvailable ? 'View everyone who connected to this module.' : backendChecking ? 'Checking Supabase sync status.' : 'Connected-user lists require Supabase syncing.')}"
           >
             ${escapeHtml(userToggleLabel)}
           </button>
@@ -2074,21 +2100,17 @@ async function loadLearningModules({ force = false } = {}) {
       renderedModules: state.learningModules.length
     });
 
-    if (modulePayload?.persistenceAvailable && modulePayload?.source !== 'fallback') {
-      setLearningModulesSyncedStatus({
-        badge: modulePayload?.statusBadge || 'Supabase synced',
-        message: modulePayload?.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
-      });
-    } else {
-      setLearningModulesFallbackStatus({
-        setupRequired: Boolean(modulePayload?.setupRequired),
-        message: modulePayload?.statusMessage || '',
-        detail: modulePayload?.fallbackDetail || ''
-      });
-    }
-
     state.learningModulesStatus = {
       ...getLearningModulesStatus(),
+      source: modulePayload?.source || getLearningModulesStatus().source,
+      contentState: modulePayload?.source === 'fallback' ? 'fallback_ready' : 'live_ready',
+      phase: modulePayload?.source === 'fallback' ? 'fallback_ready' : 'reconciling_live_rows',
+      setupRequired: Boolean(modulePayload?.setupRequired),
+      statusBadge: modulePayload?.source === 'fallback' ? 'Fallback data' : 'Reconciling',
+      statusTone: modulePayload?.source === 'fallback' ? 'warning' : 'neutral',
+      statusMessage: modulePayload?.statusMessage || 'Learning modules loaded. Verifying sync backend readiness…',
+      fallbackDetail: modulePayload?.fallbackDetail || '',
+      errorMessage: '',
       authActionState: state.user ? 'signed_in' : 'signed_out'
     };
 
