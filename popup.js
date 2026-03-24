@@ -90,15 +90,17 @@ const state = {
   learningModulesLoading: false,
   learningModulesError: '',
   learningModulesStatus: {
-    source: 'supabase',
-    persistenceAvailable: true,
+    source: 'loading',
+    phase: 'loading',
+    persistenceAvailable: false,
     setupRequired: false,
-    statusBadge: 'Supabase synced',
-    statusTone: 'success',
-    statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+    statusBadge: 'Loading modules…',
+    statusTone: 'neutral',
+    statusMessage: 'Loading learning modules and reconciling live Supabase content.',
     fallbackDetail: '',
     errorMessage: ''
   },
+  learningModulesLoadCycle: 0,
   learningModuleBackendDiagnostics: null,
   learningModulesLiveFailure: null,
   expandedLearningModules: new Set(),
@@ -1100,61 +1102,30 @@ function renderDataControlsSection() {
 }
 
 function getLearningModulesStatus() {
-  const baseStatus = state.learningModulesStatus || {
-    source: 'supabase',
-    persistenceAvailable: true,
+  return state.learningModulesStatus || {
+    source: 'loading',
+    phase: 'loading',
+    persistenceAvailable: false,
     setupRequired: false,
-    statusBadge: 'Supabase synced',
-    statusTone: 'success',
-    statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+    statusBadge: 'Loading modules…',
+    statusTone: 'neutral',
+    statusMessage: 'Loading learning modules and reconciling live Supabase content.',
     fallbackDetail: '',
     errorMessage: ''
   };
+}
 
-  const diagnostics = state.learningModuleBackendDiagnostics;
-  const liveFailure = state.learningModulesLiveFailure;
-  const diagnosticsReady = diagnostics && typeof diagnostics.persistenceAvailable === 'boolean';
-  const diagnosticsSayAvailable = diagnosticsReady ? diagnostics.persistenceAvailable : null;
-  const persistenceAvailable = liveFailure
-    ? false
-    : diagnosticsReady
-      ? diagnosticsSayAvailable
-      : baseStatus.persistenceAvailable;
-  const setupRequired = diagnosticsReady ? Boolean(diagnostics.setupRequired) : Boolean(baseStatus.setupRequired);
-
-  if (persistenceAvailable) {
-    return {
-      ...baseStatus,
-      source: 'supabase',
-      persistenceAvailable: true,
-      setupRequired: false,
-      statusBadge: baseStatus.source === 'fallback' ? 'Supabase synced' : (baseStatus.statusBadge || 'Supabase synced'),
-      statusTone: 'success',
-      statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
-      fallbackDetail: '',
-      errorMessage: ''
-    };
-  }
-
-  if (liveFailure) {
-    return {
-      ...baseStatus,
-      source: 'fallback',
-      persistenceAvailable: false,
-      setupRequired: Boolean(liveFailure.setupRequired || setupRequired),
-      statusBadge: liveFailure.setupRequired ? 'Setup required' : 'Sync unavailable',
-      statusTone: liveFailure.setupRequired ? 'error' : 'warning',
-      statusMessage: liveFailure.message || 'Supabase is currently unavailable.',
-      fallbackDetail: liveFailure.detail || baseStatus.fallbackDetail || '',
-      errorMessage: liveFailure.errorMessage || baseStatus.errorMessage || ''
-    };
-  }
-
-  return {
-    ...baseStatus,
+function setLearningModulesLoadingStatus({ message = 'Loading learning modules and reconciling live Supabase content.' } = {}) {
+  state.learningModulesStatus = {
+    source: 'loading',
+    phase: 'loading',
     persistenceAvailable: false,
-    setupRequired,
-    statusBadge: setupRequired ? 'Setup required' : (baseStatus.statusBadge || 'Fallback data')
+    setupRequired: false,
+    statusBadge: 'Loading modules…',
+    statusTone: 'neutral',
+    statusMessage: message,
+    fallbackDetail: '',
+    errorMessage: ''
   };
 }
 
@@ -1184,7 +1155,14 @@ function renderLearningModulesStatus() {
 
   if (els.learningModulesStatusBadge) {
     els.learningModulesStatusBadge.textContent = status.statusBadge || 'Supabase synced';
-    els.learningModulesStatusBadge.className = `badge ${status.statusTone === 'success' ? 'success' : status.statusTone === 'error' ? 'error' : 'warning'}`;
+    const badgeToneClass = status.statusTone === 'success'
+      ? 'success'
+      : status.statusTone === 'error'
+        ? 'error'
+        : status.statusTone === 'warning'
+          ? 'warning'
+          : '';
+    els.learningModulesStatusBadge.className = ['badge', badgeToneClass].filter(Boolean).join(' ');
   }
 
   if (els.learningModulesStatusCallout) {
@@ -1234,12 +1212,21 @@ function renderLearningModuleBackendDiagnostics() {
     getLearningModuleDiagnosticsTone(check)
   )).join('');
 
-  const summaryTone = diagnostics.persistenceAvailable ? 'success' : diagnostics.setupRequired ? 'error' : 'warning';
-  const summaryText = diagnostics.persistenceAvailable
+  const moduleStatus = getLearningModulesStatus();
+  const summaryTone = moduleStatus.phase === 'live'
+    ? 'success'
+    : moduleStatus.phase === 'fallback' && moduleStatus.setupRequired
+      ? 'error'
+      : moduleStatus.phase === 'loading'
+        ? 'warning'
+        : 'warning';
+  const summaryText = moduleStatus.phase === 'live'
     ? 'Sync backend ready'
-    : diagnostics.setupRequired
-      ? 'Setup required'
-      : 'Backend unavailable';
+    : moduleStatus.phase === 'loading'
+      ? 'Reconciling'
+      : moduleStatus.setupRequired
+        ? 'Setup required'
+        : 'Backend unavailable';
   const detailText = diagnostics.failingRequirement
     ? `Blocking requirement: ${diagnostics.failingRequirement}`
     : diagnostics.summary;
@@ -1318,10 +1305,11 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
   });
   state.learningModulesStatus = {
     source: 'fallback',
+    phase: 'fallback',
     persistenceAvailable: false,
     setupRequired,
     statusBadge: setupRequired ? 'Setup required' : 'Fallback data',
-    statusTone: 'warning',
+    statusTone: setupRequired ? 'error' : 'warning',
     statusMessage: message || (setupRequired
       ? 'Starter modules are shown from built-in fallback data until the Learning Modules migration is applied.'
       : 'Starter modules are shown from built-in fallback data while Supabase sync is unavailable.'),
@@ -1335,8 +1323,8 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
 function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Learning Modules are synced with Supabase and support saved connections.' } = {}) {
   clearLearningModulesLiveFailure();
   state.learningModulesStatus = {
-    ...getLearningModulesStatus(),
     source: 'supabase',
+    phase: 'live',
     persistenceAvailable: true,
     setupRequired: false,
     statusBadge: badge,
@@ -1888,8 +1876,11 @@ function renderLearningModulesSection() {
 }
 
 async function loadLearningModules({ force = false } = {}) {
+  const loadCycle = state.learningModulesLoadCycle + 1;
+  state.learningModulesLoadCycle = loadCycle;
   state.learningModulesLoading = true;
   state.learningModulesError = '';
+  setLearningModulesLoadingStatus();
   renderLearningModulesSection();
 
   try {
@@ -1902,18 +1893,22 @@ async function loadLearningModules({ force = false } = {}) {
     const modulePayload = canReuseCachedModules
       ? { modules: state.learningModules, ...getLearningModulesStatus() }
       : await fetchLearningModules();
+    if (loadCycle !== state.learningModulesLoadCycle) {
+      return;
+    }
 
     state.learningModules = modulePayload?.modules || [];
-    state.learningModulesStatus = {
-      ...getLearningModulesStatus(),
-      ...(modulePayload || {})
-    };
 
     if (modulePayload?.persistenceAvailable && modulePayload?.source !== 'fallback') {
-      clearLearningModulesLiveFailure();
       setLearningModulesSyncedStatus({
         badge: modulePayload?.statusBadge || 'Supabase synced',
         message: modulePayload?.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
+      });
+    } else {
+      setLearningModulesFallbackStatus({
+        setupRequired: Boolean(modulePayload?.setupRequired),
+        message: modulePayload?.statusMessage || '',
+        detail: modulePayload?.fallbackDetail || ''
       });
     }
 
@@ -1932,6 +1927,9 @@ async function loadLearningModules({ force = false } = {}) {
     });
 
     await refreshLearningModuleBackendDiagnostics({ reason: 'module-payload-load' });
+    if (loadCycle !== state.learningModulesLoadCycle) {
+      return;
+    }
     if (state.activeModuleId && !state.learningModules.some((module) => module.id === state.activeModuleId)) {
       state.activeLearningView = 'moduleList';
       state.activeModuleId = '';
@@ -1956,11 +1954,6 @@ async function loadLearningModules({ force = false } = {}) {
           } catch (syncError) {
             if (isLearningModuleSetupError(syncError?.message)) {
               connectionsSetupError = true;
-              setLearningModulesFallbackStatus({
-                setupRequired: true,
-                message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
-                detail: 'Run the bundled Learning Modules SQL to create the connection table and RPC helper, then queued connections will sync automatically.'
-              });
               markLearningModulesLiveFailure({
                 setupRequired: true,
                 message: 'Supabase setup is incomplete for Learning Modules connections.',
@@ -1974,11 +1967,6 @@ async function loadLearningModules({ force = false } = {}) {
           } catch (error) {
             if (isLearningModuleSetupError(error?.message)) {
               connectionsSetupError = true;
-              setLearningModulesFallbackStatus({
-                setupRequired: true,
-                message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
-                detail: 'The learning-module connection table or related Supabase function is missing. Run the bundled SQL to enable server-side persistence.'
-              });
               markLearningModulesLiveFailure({
                 setupRequired: true,
                 message: 'Supabase setup is incomplete for Learning Modules connections.',
@@ -1997,10 +1985,6 @@ async function loadLearningModules({ force = false } = {}) {
 
           if (!connectionsSetupError) {
             clearLearningModulesLiveFailure();
-            setLearningModulesSyncedStatus({
-              badge: state.learningModulesStatus.statusBadge || 'Supabase synced',
-              message: state.learningModulesStatus.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
-            });
           }
         }
       } catch (_error) {
@@ -2044,6 +2028,9 @@ async function loadLearningModules({ force = false } = {}) {
       detail: 'The workspace could not initialize Learning Modules. Reload after applying the Supabase migration if the issue persists.'
     });
   } finally {
+    if (loadCycle !== state.learningModulesLoadCycle) {
+      return;
+    }
     state.learningModulesLoading = false;
     if (!state.user) {
       state.moduleConnectionIds = new Set();
