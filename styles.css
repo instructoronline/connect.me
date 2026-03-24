@@ -2213,3 +2213,250 @@ code {
     width: 100%;
   }
 }
+
+/* Reference-system transplant overrides (LearningModules.tsx + LiveWorkspace.tsx).
+   Keep runtime IDs/logic intact while aligning shell, rail, panels, badges, and spacing. */
+:root {
+  --bg: #f9fafb;
+  --bg-accent: none;
+  --surface: #ffffff;
+  --surface-strong: #ffffff;
+  --surface-muted: #f9fafb;
+  --surface-soft: #eff6ff;
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --text: #111827;
+  --muted: #6b7280;
+  --primary: #2563eb;
+  --primary-soft: #eff6ff;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --error: #b91c1c;
+  --error-soft: #fef2f2;
+  --shadow-sm: none;
+  --shadow-lg: none;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --space-card-padding: 20px;
+  --space-card-padding-compact: 18px;
+  --space-card-gap: 18px;
+  --space-card-gap-compact: 14px;
+}
+
+html,
+body {
+  background: var(--bg);
+  background-image: none;
+}
+
+.page-shell,
+.dashboard-shell {
+  padding: 16px;
+}
+
+.card,
+.workspace-card,
+.subpanel-card,
+.detail-card,
+.workspace-brand-card,
+.workspace-status-card,
+.sidebar-note-card,
+.dashboard-sidebar-card,
+.surface-card,
+.site-url-card,
+.metric-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.soft-card {
+  background: #fff;
+}
+
+button {
+  border-radius: 8px;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+button:hover {
+  transform: none;
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+button.secondary,
+button.ghost {
+  background: #fff;
+  color: #374151;
+  border: 1px solid var(--border-strong);
+}
+
+button.secondary:hover,
+button.ghost:hover {
+  background: #f9fafb;
+  border-color: #cbd5e1;
+}
+
+.mini-toggle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.status-pill,
+.badge {
+  background: #f9fafb;
+  color: #4b5563;
+  border-color: var(--border);
+}
+
+.workspace-nav-shell {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.workspace-nav-header,
+.workspace-nav-summary,
+.workspace-nav-bottom {
+  border-color: #f3f4f6;
+}
+
+.workspace-nav-item {
+  border-radius: 8px;
+}
+
+.workspace-nav-item.is-active {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.workspace-nav-item.is-active .workspace-nav-icon,
+.workspace-nav-item.is-active .workspace-nav-label {
+  color: #1d4ed8;
+}
+
+.workspace-nav-item:hover {
+  background: #f9fafb;
+}
+
+.workspace-presence-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.rail-status-dot {
+  background: #ef4444;
+}
+
+.rail-user-badge {
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  background: #374151;
+  border: 0;
+  color: #fff;
+}
+
+.workspace-main-shell {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.panel-title {
+  color: #111827;
+}
+
+.panel-subtitle,
+.subtitle,
+.muted,
+.helper-text,
+.small-text {
+  color: #6b7280;
+}
+
+.popup-topbar {
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: #fff;
+}
+
+.popup-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.popup-brand-lockup {
+  align-items: flex-start;
+}
+
+.popup-brand-lockup h1 {
+  font-size: 1.2rem;
+  line-height: 1.15;
+  margin-top: 2px;
+}
+
+.popup-overview-grid {
+  gap: 10px;
+}
+
+.tab-bar.segmented-nav {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tab-link {
+  border-radius: 8px;
+}
+
+.tab-link.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.learning-module-card,
+.learning-module-card-inner,
+.learning-module-topic-preview,
+.learning-module-player-card,
+.learning-module-topic-list-card,
+.learning-module-player-footer {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.options-workspace-shell {
+  max-width: 1180px;
+  display: grid;
+  gap: 14px;
+  background: transparent;
+  border: 0;
+}
+
+@media (max-width: 760px) {
+  .popup-topbar {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .popup-topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

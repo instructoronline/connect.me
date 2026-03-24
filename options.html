@@ -7,36 +7,36 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body class="page-body light-theme">
-    <main class="page-shell options-shell">
-      <header class="page-header card soft-card">
+    <main class="page-shell options-shell workspace-main-shell options-workspace-shell">
+      <header class="page-header workspace-card">
         <div>
-          <p class="eyebrow">Connect.Me</p>
+          <p class="eyebrow panel-kicker">Controls</p>
           <h1>Extension settings overview</h1>
-          <p class="subtitle">Review your configuration, privacy controls, and policy details in a full-page layout.</p>
+          <p class="subtitle panel-subtitle">Review your configuration, privacy controls, and policy details in a full-page workspace layout.</p>
         </div>
       </header>
 
       <section id="optionsStatus" class="status-banner hidden"></section>
 
-      <section class="grid-two">
-        <article class="card stack-md">
+      <section class="grid-two workspace-card-grid two-col-grid">
+        <article class="workspace-card stack-md">
           <h2>Supabase configuration</h2>
           <div id="configSummary" class="stack-sm"></div>
         </article>
 
-        <article class="card stack-md">
+        <article class="workspace-card stack-md">
           <h2>Privacy summary</h2>
           <div id="privacySummary" class="stack-sm"></div>
         </article>
       </section>
 
-      <section class="grid-two">
-        <article class="card stack-md">
+      <section class="grid-two workspace-card-grid two-col-grid">
+        <article class="workspace-card stack-md">
           <h2>Profile readiness</h2>
           <div id="profileSummary" class="stack-sm"></div>
         </article>
 
-        <article class="card stack-md">
+        <article class="workspace-card stack-md">
           <h2>Helpful actions</h2>
           <div class="button-column">
             <button id="openPopupButton" type="button">Open extension popup</button>
