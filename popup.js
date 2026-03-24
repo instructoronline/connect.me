@@ -39,6 +39,7 @@ import {
 } from './supabase.js';
 import { privacyHtml } from './privacy.js';
 import { renderRichText } from './math-renderer.js';
+import { getStarterLearningModules } from './learning-modules.js';
 
 const HISTORY_MODE_OPTIONS = [
   { value: 'none', label: 'Store no history' },
@@ -90,13 +91,16 @@ const state = {
   learningModulesLoading: false,
   learningModulesError: '',
   learningModulesStatus: {
-    source: 'loading',
-    phase: 'loading',
+    source: 'boot',
+    phase: 'booting',
+    contentState: 'booting',
+    backendState: 'booting',
+    authActionState: 'signed_out',
     persistenceAvailable: false,
     setupRequired: false,
-    statusBadge: 'Loading modules…',
+    statusBadge: 'Booting…',
     statusTone: 'neutral',
-    statusMessage: 'Loading learning modules and reconciling live Supabase content.',
+    statusMessage: 'Preparing Learning Modules…',
     fallbackDetail: '',
     errorMessage: ''
   },
@@ -1103,25 +1107,32 @@ function renderDataControlsSection() {
 
 function getLearningModulesStatus() {
   return state.learningModulesStatus || {
-    source: 'loading',
-    phase: 'loading',
+    source: 'boot',
+    phase: 'booting',
+    contentState: 'booting',
+    backendState: 'booting',
+    authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: false,
     setupRequired: false,
-    statusBadge: 'Loading modules…',
+    statusBadge: 'Booting…',
     statusTone: 'neutral',
-    statusMessage: 'Loading learning modules and reconciling live Supabase content.',
+    statusMessage: 'Preparing Learning Modules…',
     fallbackDetail: '',
     errorMessage: ''
   };
 }
 
 function setLearningModulesLoadingStatus({ message = 'Loading learning modules and reconciling live Supabase content.' } = {}) {
+  const hasVisibleModules = Array.isArray(state.learningModules) && state.learningModules.length > 0;
   state.learningModulesStatus = {
-    source: 'loading',
-    phase: 'loading',
-    persistenceAvailable: false,
+    source: hasVisibleModules ? 'preloaded' : 'loading',
+    phase: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
+    contentState: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
+    backendState: hasVisibleModules ? 'reconciling_live_rows' : 'loading_content',
+    authActionState: state.user ? 'signed_in' : 'signed_out',
+    persistenceAvailable: hasVisibleModules ? getLearningModulesStatus().persistenceAvailable : false,
     setupRequired: false,
-    statusBadge: 'Loading modules…',
+    statusBadge: hasVisibleModules ? 'Reconciling' : 'Loading modules…',
     statusTone: 'neutral',
     statusMessage: message,
     fallbackDetail: '',
@@ -1213,20 +1224,24 @@ function renderLearningModuleBackendDiagnostics() {
   )).join('');
 
   const moduleStatus = getLearningModulesStatus();
-  const summaryTone = moduleStatus.phase === 'live'
+  const summaryTone = moduleStatus.backendState === 'live_ready'
     ? 'success'
-    : moduleStatus.phase === 'fallback' && moduleStatus.setupRequired
+    : moduleStatus.backendState === 'unavailable'
       ? 'error'
-      : moduleStatus.phase === 'loading'
+      : moduleStatus.backendState === 'degraded'
+      ? 'error'
+      : moduleStatus.backendState === 'booting' || moduleStatus.backendState === 'loading_content' || moduleStatus.backendState === 'reconciling_live_rows'
         ? 'warning'
         : 'warning';
-  const summaryText = moduleStatus.phase === 'live'
+  const summaryText = moduleStatus.backendState === 'live_ready'
     ? 'Sync backend ready'
-    : moduleStatus.phase === 'loading'
+    : moduleStatus.backendState === 'booting' || moduleStatus.backendState === 'loading_content' || moduleStatus.backendState === 'reconciling_live_rows'
       ? 'Reconciling'
-      : moduleStatus.setupRequired
+      : moduleStatus.backendState === 'degraded' && moduleStatus.setupRequired
         ? 'Setup required'
-        : 'Backend unavailable';
+        : moduleStatus.backendState === 'degraded'
+          ? 'Degraded'
+          : 'Backend unavailable';
   const detailText = diagnostics.failingRequirement
     ? `Blocking requirement: ${diagnostics.failingRequirement}`
     : diagnostics.summary;
@@ -1251,6 +1266,10 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
     };
     if (diagnostics?.persistenceAvailable) {
       clearLearningModulesLiveFailure();
+      state.learningModulesStatus = {
+        ...getLearningModulesStatus(),
+        backendState: 'live_ready'
+      };
       if (state.user) {
         try {
           const syncResult = await syncPendingLearningModuleConnectionsForCurrentUser(state.learningModules);
@@ -1281,6 +1300,10 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
         }
       ]
     };
+    state.learningModulesStatus = {
+      ...getLearningModulesStatus(),
+      backendState: 'unavailable'
+    };
   }
 
   logStructured('log', '[Connect.Me] Learning Modules backend diagnostics', state.learningModuleBackendDiagnostics);
@@ -1305,7 +1328,10 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
   });
   state.learningModulesStatus = {
     source: 'fallback',
-    phase: 'fallback',
+    phase: setupRequired ? 'degraded' : 'fallback_ready',
+    contentState: 'fallback_ready',
+    backendState: setupRequired ? 'degraded' : 'unavailable',
+    authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: false,
     setupRequired,
     statusBadge: setupRequired ? 'Setup required' : 'Fallback data',
@@ -1324,7 +1350,10 @@ function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Lear
   clearLearningModulesLiveFailure();
   state.learningModulesStatus = {
     source: 'supabase',
-    phase: 'live',
+    phase: 'live_ready',
+    contentState: 'live_ready',
+    backendState: 'live_ready',
+    authActionState: state.user ? 'signed_in' : 'signed_out',
     persistenceAvailable: true,
     setupRequired: false,
     statusBadge: badge,
@@ -1880,8 +1909,18 @@ async function loadLearningModules({ force = false } = {}) {
   state.learningModulesLoadCycle = loadCycle;
   state.learningModulesLoading = true;
   state.learningModulesError = '';
+  const hasExistingModules = Array.isArray(state.learningModules) && state.learningModules.length > 0;
+  if (!hasExistingModules) {
+    state.learningModules = getStarterLearningModules();
+  }
   setLearningModulesLoadingStatus();
   renderLearningModulesSection();
+  logStructured('log', '[Connect.Me] Learning modules preload started', {
+    loadCycle,
+    force,
+    authPresent: Boolean(state.user?.id),
+    usingStarterPreload: !hasExistingModules
+  });
 
   try {
     const canReuseCachedModules = !force
@@ -1898,6 +1937,13 @@ async function loadLearningModules({ force = false } = {}) {
     }
 
     state.learningModules = modulePayload?.modules || [];
+    logStructured('log', '[Connect.Me] Learning modules public live query resolved', {
+      source: modulePayload?.source || 'unknown',
+      liveQuerySucceeded: modulePayload?.source !== 'fallback',
+      fallbackUsed: modulePayload?.source === 'fallback',
+      setupRequired: Boolean(modulePayload?.setupRequired),
+      renderedModules: state.learningModules.length
+    });
 
     if (modulePayload?.persistenceAvailable && modulePayload?.source !== 'fallback') {
       setLearningModulesSyncedStatus({
@@ -1911,6 +1957,11 @@ async function loadLearningModules({ force = false } = {}) {
         detail: modulePayload?.fallbackDetail || ''
       });
     }
+
+    state.learningModulesStatus = {
+      ...getLearningModulesStatus(),
+      authActionState: state.user ? 'signed_in' : 'signed_out'
+    };
 
     logStructured('log', '[Connect.Me] Learning modules payload diagnostics', {
       source: modulePayload?.source || 'unknown',
@@ -2027,6 +2078,12 @@ async function loadLearningModules({ force = false } = {}) {
       setupRequired: isLearningModuleSetupError(error?.message),
       detail: 'The workspace could not initialize Learning Modules. Reload after applying the Supabase migration if the issue persists.'
     });
+    logStructured('error', '[Connect.Me] Learning modules public live query failed', {
+      loadCycle,
+      error: error?.message || 'Unknown preload error',
+      fallbackUsed: true,
+      authPresent: Boolean(state.user?.id)
+    });
   } finally {
     if (loadCycle !== state.learningModulesLoadCycle) {
       return;
@@ -2037,6 +2094,13 @@ async function loadLearningModules({ force = false } = {}) {
       state.pendingModuleConnectionIds = new Set();
       state.pendingLocalModuleConnectionIds = new Set();
     }
+    logStructured('log', '[Connect.Me] Learning modules final resolved state', {
+      loadCycle,
+      contentState: getLearningModulesStatus().contentState,
+      backendState: getLearningModulesStatus().backendState,
+      authActionState: getLearningModulesStatus().authActionState,
+      fallbackUsed: getLearningModulesStatus().source === 'fallback'
+    });
     renderLearningModulesSection();
   }
 }
@@ -2093,10 +2157,22 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   }
 
   if (!state.user) {
+    logStructured('log', '[Connect.Me] Learning module connect action gated by auth', {
+      moduleId,
+      moduleSlug,
+      authPresent: false,
+      gatedByAuth: true
+    });
     renderLearningModulesSection();
     setStatus('Please sign in to connect yourself to a learning module.', 'error');
     return;
   }
+  logStructured('log', '[Connect.Me] Learning module connect action gated by auth', {
+    moduleId,
+    moduleSlug,
+    authPresent: true,
+    gatedByAuth: false
+  });
 
   const { resolvedUuid, moduleUuidBySlug } = resolveLearningModuleUuid(moduleId, moduleSlug);
   const connectionTrackingId = resolvedUuid || moduleId || moduleSlug;
@@ -2162,10 +2238,6 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       clearLearningModulesLiveFailure();
       state.pendingLocalModuleConnectionIds.delete(connectionTrackingId);
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-supabase-success' });
-      setLearningModulesSyncedStatus({
-        badge: 'Connected',
-        message: 'Your learning-module connection was saved to Supabase.'
-      });
       state.learningModuleUsersBySlug.delete(moduleSlug);
       setStatus('You are now connected to this learning module.', 'success');
 
