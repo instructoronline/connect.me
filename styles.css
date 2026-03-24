@@ -550,17 +550,24 @@ textarea:disabled {
 
 .profile-field-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 220px);
-  align-items: flex-start;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, 240px);
+  align-items: start;
   gap: 12px;
   margin-bottom: 10px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .field-label {
-  display: inline-flex;
+  display: block;
   width: 100%;
+  min-width: 140px;
+  max-width: 100%;
   font-size: 0.92rem;
   font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .visibility-select {
@@ -1146,11 +1153,6 @@ code {
   min-width: 0;
 }
 
-.field-label {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .visibility-select {
   min-width: 0;
 }
@@ -1294,9 +1296,18 @@ code {
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 680px) {
   .profile-field-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .field-label {
+    min-width: 0;
+  }
+
+  .visibility-select {
+    max-width: 100%;
   }
 }
 
