@@ -201,6 +201,26 @@ function logStructured(level, message, payload) {
   logger(`${message} ${stringifyForLog(payload)}`);
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function buildLearningModuleUuidLookup() {
+  return new Map((state.learningModules || [])
+    .filter((module) => module?.slug && isUuidLike(module?.db_id || module?.id))
+    .map((module) => [module.slug, module.db_id || module.id]));
+}
+
+function resolveLearningModuleUuid(moduleId = '', moduleSlug = '') {
+  const lookup = buildLearningModuleUuidLookup();
+  const directUuid = isUuidLike(moduleId) ? moduleId : '';
+  const mappedUuid = moduleSlug ? (lookup.get(moduleSlug) || '') : '';
+  return {
+    resolvedUuid: directUuid || mappedUuid || '',
+    moduleUuidBySlug: lookup
+  };
+}
+
 function formatActiveUserLabel(count) {
   const safeCount = Number(count) || 0;
   return `${safeCount} active user${safeCount === 1 ? '' : 's'}`;
@@ -1613,10 +1633,11 @@ function renderLearningModulePlayer() {
 
 function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
   const isExpanded = state.expandedLearningModules.has(module.id);
-  const connectionDisplay = getModuleConnectionDisplay(module.id);
+  const resolvedModuleDbId = module.db_id || module.id;
+  const connectionDisplay = getModuleConnectionDisplay(resolvedModuleDbId);
   const isConnected = connectionDisplay.connected;
   const isQueued = connectionDisplay.queued;
-  const isConnecting = state.pendingModuleConnectionIds.has(module.id);
+  const isConnecting = state.pendingModuleConnectionIds.has(resolvedModuleDbId);
   const topics = Array.isArray(module.topics) ? module.topics : [];
   const userToggleLabel = status.persistenceAvailable && state.expandedLearningModuleUsers.has(module.slug)
     ? 'Hide all users connected'
@@ -1662,7 +1683,7 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
             type="button"
             class="learning-module-connect-button secondary ${isConnected ? 'is-connected' : ''}"
             data-action="connect-module"
-            data-module-id="${escapeHtml(module.id)}"
+            data-module-id="${escapeHtml(resolvedModuleDbId)}"
             data-module-slug="${escapeHtml(module.slug)}"
             ${!canConnect ? 'disabled' : ''}
             title="${escapeHtml(!state.user ? 'Sign in to save this learning module.' : isQueued ? 'Saved locally and waiting to sync to Supabase.' : status.persistenceAvailable ? 'Save this learning module to your profile.' : 'Save locally now and sync to Supabase later.')}"
@@ -1683,7 +1704,7 @@ function renderLearningModuleCard(module, status = getLearningModulesStatus()) {
             type="button"
             class="secondary small"
             data-action="toggle-users"
-            data-module-id="${escapeHtml(module.id)}"
+            data-module-id="${escapeHtml(resolvedModuleDbId)}"
             data-module-slug="${escapeHtml(module.slug)}"
             ${!status.persistenceAvailable ? 'disabled' : ''}
             title="${escapeHtml(status.persistenceAvailable ? 'View everyone who connected to this module.' : 'Connected-user lists require Supabase syncing.')}"
@@ -1954,10 +1975,23 @@ async function loadLearningModules({ force = false } = {}) {
         pendingConnections = [];
       }
 
-      state.pendingLocalModuleConnectionIds = new Set((pendingConnections || []).map((connection) => connection.module_id));
+      const moduleUuidBySlug = buildLearningModuleUuidLookup();
+      const normalizeConnectionModuleId = (connection = {}) => {
+        if (isUuidLike(connection?.module_id)) {
+          return connection.module_id;
+        }
+        if (connection?.module_slug) {
+          return moduleUuidBySlug.get(connection.module_slug) || '';
+        }
+        return '';
+      };
+
+      state.pendingLocalModuleConnectionIds = new Set((pendingConnections || [])
+        .map((connection) => normalizeConnectionModuleId(connection))
+        .filter(Boolean));
       state.moduleConnectionIds = new Set([
-        ...(remoteConnections || []).map((connection) => connection.module_id),
-        ...(pendingConnections || []).map((connection) => connection.module_id)
+        ...(remoteConnections || []).map((connection) => normalizeConnectionModuleId(connection)).filter(Boolean),
+        ...(pendingConnections || []).map((connection) => normalizeConnectionModuleId(connection)).filter(Boolean)
       ]);
     } else {
       state.moduleConnectionIds = new Set();
@@ -2027,7 +2061,7 @@ async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
 }
 
 async function handleLearningModuleConnect(moduleId, moduleSlug) {
-  if (!moduleId) {
+  if (!moduleId && !moduleSlug) {
     return;
   }
 
@@ -2045,58 +2079,77 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     return;
   }
 
-  if (state.moduleConnectionIds.has(moduleId) || state.pendingModuleConnectionIds.has(moduleId)) {
+  const { resolvedUuid, moduleUuidBySlug } = resolveLearningModuleUuid(moduleId, moduleSlug);
+  if (!resolvedUuid) {
+    logStructured('error', '[Connect.Me] Learning module connect blocked: missing live UUID resolution', {
+      starterId: moduleId,
+      slug: moduleSlug,
+      resolvedLiveUuid: null
+    });
+    setStatus('Unable to connect right now: this module is missing a live Supabase UUID. Reload modules and try again.', 'error');
     return;
   }
 
-  state.pendingModuleConnectionIds.add(moduleId);
-  state.moduleConnectionIds.add(moduleId);
+  if (state.moduleConnectionIds.has(resolvedUuid) || state.pendingModuleConnectionIds.has(resolvedUuid)) {
+    return;
+  }
+
+  state.pendingModuleConnectionIds.add(resolvedUuid);
   rerenderLearningModuleCard(moduleId);
 
   const connectAttemptDiagnostics = {
     userIdPresent: Boolean(state.user?.id),
-    moduleIdPresent: Boolean(moduleId),
+    moduleIdPresent: Boolean(resolvedUuid),
     liveSyncAvailable: Boolean(getLearningModulesStatus().persistenceAvailable),
     attemptedSupabaseInsert: false,
     insertResult: 'not_attempted',
     fallbackQueueBranchTaken: false
   };
   logStructured('log', '[Connect.Me] Learning module connect attempt', {
-    moduleId,
-    moduleSlug,
+    starterId: moduleId,
+    slug: moduleSlug,
+    resolvedLiveUuid: resolvedUuid,
+    insertPayload: {
+      module_id: resolvedUuid,
+      user_id: state.user?.id || null
+    },
     ...connectAttemptDiagnostics
   });
 
+  let connectResult = null;
+
   try {
-    const result = await connectCurrentUserToLearningModule(moduleId, { moduleSlug });
+    connectResult = await connectCurrentUserToLearningModule(resolvedUuid, { moduleSlug, moduleUuidBySlug });
     logStructured('log', '[Connect.Me] Learning module connect result', {
-      moduleId,
-      moduleSlug,
-      ...(result?.diagnostics || connectAttemptDiagnostics),
-      queued: Boolean(result?.queued),
-      status: result?.status || ''
+      starterId: moduleId,
+      slug: moduleSlug,
+      resolvedLiveUuid: resolvedUuid,
+      ...(connectResult?.diagnostics || connectAttemptDiagnostics),
+      queued: Boolean(connectResult?.queued),
+      status: connectResult?.status || ''
     });
-    if (result?.queued) {
-      state.pendingLocalModuleConnectionIds.add(moduleId);
+    if (connectResult?.queued) {
+      state.pendingLocalModuleConnectionIds.add(resolvedUuid);
       markLearningModulesLiveFailure({
-        setupRequired: result?.status === 'setup_required',
-        message: result?.status === 'setup_required'
+        setupRequired: connectResult?.status === 'setup_required',
+        message: connectResult?.status === 'setup_required'
           ? 'Supabase setup is incomplete for Learning Modules connections.'
           : 'Supabase write failed, so this connection was queued locally.',
-        detail: result?.diagnostics?.insertError || 'Live save failed and the connection was queued locally.',
-        errorMessage: result?.diagnostics?.insertError || '',
+        detail: connectResult?.diagnostics?.insertError || 'Live save failed and the connection was queued locally.',
+        errorMessage: connectResult?.diagnostics?.insertError || '',
         operation: 'connect-write'
       });
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-queued' });
       setStatus(
-        result.status === 'setup_required'
+        connectResult.status === 'setup_required'
           ? 'Connect Me saved this module locally. Run the bundled Learning Modules SQL and it will sync automatically.'
           : 'Connect Me saved this module locally and will sync it to Supabase automatically when the backend is reachable again.',
         'success'
       );
+      state.moduleConnectionIds.add(resolvedUuid);
     } else {
       clearLearningModulesLiveFailure();
-      state.pendingLocalModuleConnectionIds.delete(moduleId);
+      state.pendingLocalModuleConnectionIds.delete(resolvedUuid);
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-supabase-success' });
       setLearningModulesSyncedStatus({
         badge: 'Connected',
@@ -2107,10 +2160,11 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
 
       await loadLearningModules({ force: false });
       await loadLearningModuleUsers(moduleSlug, { force: true });
+      state.moduleConnectionIds.add(resolvedUuid);
 
     }
   } catch (error) {
-    state.moduleConnectionIds.delete(moduleId);
+    state.moduleConnectionIds.delete(resolvedUuid);
     markLearningModulesLiveFailure({
       setupRequired: isLearningModuleSetupError(error?.message),
       message: 'Unable to save this module connection to Supabase.',
@@ -2119,18 +2173,19 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       operation: 'connect-write'
     });
     logStructured('error', '[Connect.Me] Learning module connect failed', {
-      moduleId,
-      moduleSlug,
+      starterId: moduleId,
+      slug: moduleSlug,
+      resolvedLiveUuid: resolvedUuid,
       ...(error?.learningModuleConnectDiagnostics || connectAttemptDiagnostics),
       insertResult: 'error',
       error: error?.message || 'Unknown error'
     });
     await refreshLearningModuleBackendDiagnostics({ reason: 'connect-error' });
-    if (!state.pendingLocalModuleConnectionIds.has(moduleId)) {
+    if (!state.pendingLocalModuleConnectionIds.has(resolvedUuid)) {
       setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
     }
   } finally {
-    state.pendingModuleConnectionIds.delete(moduleId);
+    state.pendingModuleConnectionIds.delete(resolvedUuid);
     rerenderLearningModuleCard(moduleId);
   }
 }

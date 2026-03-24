@@ -81,7 +81,7 @@ function getLearningModulesFallbackPayload({ reason = 'unavailable', error = nul
     : 'Supabase is temporarily unavailable, so starter modules are being shown from built-in local data.';
 
   return {
-    modules: cloneLearningModuleFallbackData(),
+    modules: cloneLearningModuleFallbackData().map((module) => ({ ...module, db_id: null })),
     source: 'fallback',
     persistenceAvailable: false,
     setupRequired,
@@ -139,6 +139,23 @@ function isTransientLearningModulePersistenceMessage(message = '') {
 
 export function isRecoverableLearningModulePersistenceError(message = '') {
   return isLearningModuleConnectionsTableMissingMessage(message) || isTransientLearningModulePersistenceMessage(message);
+}
+
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function buildModuleUuidLookup(modules = []) {
+  return new Map((modules || [])
+    .filter((module) => module?.slug && isUuidLike(module?.id))
+    .map((module) => [module.slug, module.id]));
+}
+
+function resolveModuleUuid({ moduleId = '', moduleSlug = '', moduleUuidBySlug = new Map() } = {}) {
+  const directUuid = isUuidLike(moduleId) ? moduleId : '';
+  const mappedUuid = moduleSlug ? (moduleUuidBySlug.get(moduleSlug) || '') : '';
+  return directUuid || mappedUuid || '';
 }
 
 function normalizePendingLearningModuleEntry(entry = {}) {
@@ -235,25 +252,34 @@ export async function syncPendingLearningModuleConnectionsForCurrentUser(availab
 
   const synced = [];
   const remaining = [];
-  const moduleIdsBySlug = new Map((availableModules || [])
-    .filter((module) => module?.slug && module?.id)
-    .map((module) => [module.slug, module.id]));
+  const moduleUuidBySlug = buildModuleUuidLookup(availableModules || []);
 
   for (const entry of pending) {
-    const targetModuleId = moduleIdsBySlug.get(entry.module_slug) || entry.module_id;
-    if (!targetModuleId || (String(targetModuleId).startsWith('starter-module-') && !moduleIdsBySlug.get(entry.module_slug))) {
+    const resolvedModuleUuid = resolveModuleUuid({
+      moduleId: entry.module_id,
+      moduleSlug: entry.module_slug,
+      moduleUuidBySlug
+    });
+
+    console.log('[Connect.Me] Pending learning module sync resolution', {
+      starterId: entry.module_id,
+      slug: entry.module_slug,
+      resolvedLiveUuid: resolvedModuleUuid || null
+    });
+
+    if (!resolvedModuleUuid) {
       remaining.push(entry);
       continue;
     }
 
     try {
-      await connectCurrentUserToLearningModule(targetModuleId, {
+      await connectCurrentUserToLearningModule(resolvedModuleUuid, {
         moduleSlug: entry.module_slug,
         allowQueue: false
       });
       synced.push({
         ...entry,
-        module_id: targetModuleId
+        module_id: resolvedModuleUuid
       });
     } catch (error) {
       if (isRecoverableLearningModulePersistenceError(error?.message)) {
@@ -334,6 +360,8 @@ function mergeLearningModulesWithStarterContent(modules = [], topics = [], cards
 
     return {
       ...module,
+      local_id: module?.local_id || '',
+      db_id: isUuidLike(module?.id) ? module.id : null,
       topics: moduleTopics
     };
   });
@@ -1736,20 +1764,26 @@ export async function fetchLearningModuleConnectionsForCurrentUser() {
   });
 }
 
-export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug = '', allowQueue = true } = {}) {
+export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug = '', allowQueue = true, moduleUuidBySlug = null } = {}) {
   const user = await getCurrentUser();
   if (!user) {
     throw new Error('Please sign in to connect yourself to a learning module.');
   }
-  if (!moduleId) {
-    throw new Error('Missing learning module id. Unable to save connection.');
+  const resolvedModuleId = resolveModuleUuid({
+    moduleId,
+    moduleSlug,
+    moduleUuidBySlug: moduleUuidBySlug instanceof Map ? moduleUuidBySlug : new Map()
+  });
+
+  if (!resolvedModuleId) {
+    throw new Error(`Missing live learning module UUID for slug "${moduleSlug || 'unknown'}". Reload modules and try again.`);
   }
 
   const pendingConnections = await getPendingLearningModuleConnectionsForUser(user.id);
-  const existingPending = pendingConnections.find((entry) => entry.module_id === moduleId);
+  const existingPending = pendingConnections.find((entry) => entry.module_id === resolvedModuleId || entry.module_slug === moduleSlug);
   const diagnostics = {
     userIdPresent: Boolean(user?.id),
-    moduleIdPresent: Boolean(moduleId),
+    moduleIdPresent: Boolean(resolvedModuleId),
     liveSyncAvailable: true,
     attemptedSupabaseInsert: false,
     insertResult: 'not_attempted',
@@ -1759,11 +1793,11 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
 
   try {
     const existingRows = await restRequest('learning_module_connections', {
-      query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+      query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(resolvedModuleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
     });
 
     if (existingRows?.length) {
-      await removePendingLearningModuleConnection(user.id, moduleId);
+      await removePendingLearningModuleConnection(user.id, resolvedModuleId);
       return {
         status: 'connected',
         connection: existingRows[0],
@@ -1777,15 +1811,22 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
     }
 
     diagnostics.attemptedSupabaseInsert = true;
+    const insertPayload = {
+      module_id: resolvedModuleId,
+      user_id: user.id
+    };
+    console.log('[Connect.Me] Learning module insert payload', {
+      starterId: moduleId,
+      slug: moduleSlug,
+      resolvedLiveUuid: resolvedModuleId,
+      insertPayload
+    });
     const rows = await restRequest('learning_module_connections', {
       method: 'POST',
-      body: {
-        module_id: moduleId,
-        user_id: user.id
-      }
+      body: insertPayload
     });
 
-    await removePendingLearningModuleConnection(user.id, moduleId);
+    await removePendingLearningModuleConnection(user.id, resolvedModuleId);
     return {
       status: 'connected',
       connection: rows?.[0] || null,
@@ -1800,9 +1841,9 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
     diagnostics.insertError = error?.message || 'Unknown insert error';
     if (normalizedMessage.includes('duplicate key') || normalizedMessage.includes('already exists')) {
       const rows = await restRequest('learning_module_connections', {
-        query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
+        query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(resolvedModuleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
       });
-      await removePendingLearningModuleConnection(user.id, moduleId);
+      await removePendingLearningModuleConnection(user.id, resolvedModuleId);
       return {
         status: 'connected',
         connection: rows?.[0] || null,
@@ -1824,7 +1865,7 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
     }
 
     const queuedConnection = existingPending || await upsertPendingLearningModuleConnection({
-      module_id: moduleId,
+      module_id: resolvedModuleId,
       module_slug: moduleSlug,
       user_id: user.id,
       reason: isLearningModuleConnectionsTableMissingMessage(error?.message) ? 'setup_required' : 'waiting_for_supabase'
