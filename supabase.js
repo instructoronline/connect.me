@@ -1776,6 +1776,29 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
   });
 
   if (!resolvedModuleId) {
+    if (allowQueue && moduleSlug) {
+      const fallbackModuleId = String(moduleId || moduleSlug).trim();
+      const queuedEntry = await upsertPendingLearningModuleConnection({
+        module_id: fallbackModuleId,
+        module_slug: moduleSlug,
+        user_id: user.id,
+        reason: 'missing_live_uuid'
+      });
+      return {
+        status: 'queued_missing_uuid',
+        connection: null,
+        queued: Boolean(queuedEntry),
+        diagnostics: {
+          userIdPresent: Boolean(user?.id),
+          moduleIdPresent: false,
+          liveSyncAvailable: false,
+          attemptedSupabaseInsert: false,
+          insertResult: 'queued_missing_uuid',
+          fallbackQueueBranchTaken: true,
+          insertError: 'Missing live learning module UUID; queued by slug for deferred sync.'
+        }
+      };
+    }
     throw new Error(`Missing live learning module UUID for slug "${moduleSlug || 'unknown'}". Reload modules and try again.`);
   }
 

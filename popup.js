@@ -2080,27 +2080,19 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   }
 
   const { resolvedUuid, moduleUuidBySlug } = resolveLearningModuleUuid(moduleId, moduleSlug);
-  if (!resolvedUuid) {
-    logStructured('error', '[Connect.Me] Learning module connect blocked: missing live UUID resolution', {
-      starterId: moduleId,
-      slug: moduleSlug,
-      resolvedLiveUuid: null
-    });
-    setStatus('Unable to connect right now: this module is missing a live Supabase UUID. Reload modules and try again.', 'error');
+  const connectionTrackingId = resolvedUuid || moduleId || moduleSlug;
+
+  if (state.moduleConnectionIds.has(connectionTrackingId) || state.pendingModuleConnectionIds.has(connectionTrackingId)) {
     return;
   }
 
-  if (state.moduleConnectionIds.has(resolvedUuid) || state.pendingModuleConnectionIds.has(resolvedUuid)) {
-    return;
-  }
-
-  state.pendingModuleConnectionIds.add(resolvedUuid);
+  state.pendingModuleConnectionIds.add(connectionTrackingId);
   rerenderLearningModuleCard(moduleId);
 
   const connectAttemptDiagnostics = {
     userIdPresent: Boolean(state.user?.id),
     moduleIdPresent: Boolean(resolvedUuid),
-    liveSyncAvailable: Boolean(getLearningModulesStatus().persistenceAvailable),
+    liveSyncAvailable: Boolean(getLearningModulesStatus().persistenceAvailable && resolvedUuid),
     attemptedSupabaseInsert: false,
     insertResult: 'not_attempted',
     fallbackQueueBranchTaken: false
@@ -2110,7 +2102,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     slug: moduleSlug,
     resolvedLiveUuid: resolvedUuid,
     insertPayload: {
-      module_id: resolvedUuid,
+      module_id: resolvedUuid || moduleId || null,
       user_id: state.user?.id || null
     },
     ...connectAttemptDiagnostics
@@ -2119,7 +2111,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
   let connectResult = null;
 
   try {
-    connectResult = await connectCurrentUserToLearningModule(resolvedUuid, { moduleSlug, moduleUuidBySlug });
+    connectResult = await connectCurrentUserToLearningModule(resolvedUuid || moduleId, { moduleSlug, moduleUuidBySlug });
     logStructured('log', '[Connect.Me] Learning module connect result', {
       starterId: moduleId,
       slug: moduleSlug,
@@ -2129,7 +2121,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       status: connectResult?.status || ''
     });
     if (connectResult?.queued) {
-      state.pendingLocalModuleConnectionIds.add(resolvedUuid);
+      state.pendingLocalModuleConnectionIds.add(connectionTrackingId);
       markLearningModulesLiveFailure({
         setupRequired: connectResult?.status === 'setup_required',
         message: connectResult?.status === 'setup_required'
@@ -2146,10 +2138,10 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
           : 'Connect Me saved this module locally and will sync it to Supabase automatically when the backend is reachable again.',
         'success'
       );
-      state.moduleConnectionIds.add(resolvedUuid);
+      state.moduleConnectionIds.add(connectionTrackingId);
     } else {
       clearLearningModulesLiveFailure();
-      state.pendingLocalModuleConnectionIds.delete(resolvedUuid);
+      state.pendingLocalModuleConnectionIds.delete(connectionTrackingId);
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-supabase-success' });
       setLearningModulesSyncedStatus({
         badge: 'Connected',
@@ -2160,11 +2152,11 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
 
       await loadLearningModules({ force: false });
       await loadLearningModuleUsers(moduleSlug, { force: true });
-      state.moduleConnectionIds.add(resolvedUuid);
+      state.moduleConnectionIds.add(connectionTrackingId);
 
     }
   } catch (error) {
-    state.moduleConnectionIds.delete(resolvedUuid);
+    state.moduleConnectionIds.delete(connectionTrackingId);
     markLearningModulesLiveFailure({
       setupRequired: isLearningModuleSetupError(error?.message),
       message: 'Unable to save this module connection to Supabase.',
@@ -2181,11 +2173,11 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
       error: error?.message || 'Unknown error'
     });
     await refreshLearningModuleBackendDiagnostics({ reason: 'connect-error' });
-    if (!state.pendingLocalModuleConnectionIds.has(resolvedUuid)) {
+    if (!state.pendingLocalModuleConnectionIds.has(connectionTrackingId)) {
       setStatus(error.message || 'Unable to connect you to this module right now.', 'error');
     }
   } finally {
-    state.pendingModuleConnectionIds.delete(resolvedUuid);
+    state.pendingModuleConnectionIds.delete(connectionTrackingId);
     rerenderLearningModuleCard(moduleId);
   }
 }
