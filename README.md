@@ -161,7 +161,9 @@ The script uses either `inkscape` or `rsvg-convert` to rasterize PNG targets, an
 
 This build is preconfigured to use the Supabase project at `https://dhmtljnjygcqzjrhhscu.supabase.co` with the bundled anon/public key.
 
-1. Open the SQL Editor for that Supabase project and run `docs/supabase-schema.sql`.
+1. Apply the Learning Modules repair migration at `supabase/migrations/202603240001_learning_modules_sync_setup.sql`.
+   - Supabase CLI (from repo root): `supabase db push`
+   - SQL editor fallback: run `supabase/migrations/202603240001_learning_modules_sync_setup.sql`, then run `docs/supabase-schema.sql` if your project is missing the broader base schema.
 2. Confirm Email auth is enabled in Supabase Authentication.
 3. Confirm or create the public Storage bucket named `avatars` if your project policies require manual setup.
 4. Load this extension locally. The popup Settings tab will automatically show the built-in Supabase URL and anon key as read-only values.
