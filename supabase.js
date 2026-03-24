@@ -134,9 +134,7 @@ function isTransientLearningModulePersistenceMessage(message = '') {
     || normalized.includes('timed out')
     || normalized.includes('gateway')
     || normalized.includes('service unavailable')
-    || normalized.includes('temporarily unavailable')
-    || normalized.includes('invalid input syntax for type uuid')
-    || normalized.includes('violates foreign key constraint');
+    || normalized.includes('temporarily unavailable');
 }
 
 export function isRecoverableLearningModulePersistenceError(message = '') {
@@ -1743,9 +1741,21 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
   if (!user) {
     throw new Error('Please sign in to connect yourself to a learning module.');
   }
+  if (!moduleId) {
+    throw new Error('Missing learning module id. Unable to save connection.');
+  }
 
   const pendingConnections = await getPendingLearningModuleConnectionsForUser(user.id);
   const existingPending = pendingConnections.find((entry) => entry.module_id === moduleId);
+  const diagnostics = {
+    userIdPresent: Boolean(user?.id),
+    moduleIdPresent: Boolean(moduleId),
+    liveSyncAvailable: true,
+    attemptedSupabaseInsert: false,
+    insertResult: 'not_attempted',
+    fallbackQueueBranchTaken: false,
+    insertError: ''
+  };
 
   try {
     const existingRows = await restRequest('learning_module_connections', {
@@ -1757,10 +1767,16 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
       return {
         status: 'connected',
         connection: existingRows[0],
-        queued: false
+        queued: false,
+        diagnostics: {
+          ...diagnostics,
+          attemptedSupabaseInsert: false,
+          insertResult: 'already_connected'
+        }
       };
     }
 
+    diagnostics.attemptedSupabaseInsert = true;
     const rows = await restRequest('learning_module_connections', {
       method: 'POST',
       body: {
@@ -1773,10 +1789,15 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
     return {
       status: 'connected',
       connection: rows?.[0] || null,
-      queued: false
+      queued: false,
+      diagnostics: {
+        ...diagnostics,
+        insertResult: 'success'
+      }
     };
   } catch (error) {
     const normalizedMessage = String(error?.message || '').toLowerCase();
+    diagnostics.insertError = error?.message || 'Unknown insert error';
     if (normalizedMessage.includes('duplicate key') || normalizedMessage.includes('already exists')) {
       const rows = await restRequest('learning_module_connections', {
         query: `?select=id,module_id,user_id,connected_at&module_id=eq.${encodeURIComponent(moduleId)}&user_id=eq.${encodeURIComponent(user.id)}&limit=1`
@@ -1785,11 +1806,20 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
       return {
         status: 'connected',
         connection: rows?.[0] || null,
-        queued: false
+        queued: false,
+        diagnostics: {
+          ...diagnostics,
+          insertResult: 'duplicate_treated_as_success'
+        }
       };
     }
 
     if (!allowQueue || !isRecoverableLearningModulePersistenceError(error?.message)) {
+      error.learningModuleConnectDiagnostics = {
+        ...diagnostics,
+        insertResult: 'error',
+        fallbackQueueBranchTaken: false
+      };
       throw error;
     }
 
@@ -1803,7 +1833,13 @@ export async function connectCurrentUserToLearningModule(moduleId, { moduleSlug 
     return {
       status: queuedConnection?.reason === 'setup_required' ? 'setup_required' : 'queued',
       connection: queuedConnection,
-      queued: true
+      queued: true,
+      diagnostics: {
+        ...diagnostics,
+        liveSyncAvailable: false,
+        insertResult: 'error',
+        fallbackQueueBranchTaken: true
+      }
     };
   }
 }
