@@ -70,9 +70,29 @@ body {
   display: block;
 }
 
+/* Fix: hide popup dashboard during initialization to prevent
+   auth-state flicker before session resolves. */
 .popup-body.app-initializing .popup-dashboard {
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Fix: hide learning module status badge, callout, diagnostics panel,
+   and card actions/users during init to prevent "Reconciling /
+   Checking sync readiness / Supabase unavailable" flicker. */
+.desktop-body.app-initializing #learningModulesStatusBadge,
+.desktop-body.app-initializing #learningModulesStatusCallout,
+.desktop-body.app-initializing #learningModulesBackendDiagnostics,
+.desktop-body.app-initializing .learning-module-card .learning-module-actions,
+.desktop-body.app-initializing .learning-module-card .learning-module-users-section {
+  visibility: hidden;
+}
+
+/* Fix: hide learning module card actions and user sections while the
+   backend availability check is still in progress after init. */
+.learning-modules-list.backend-checking .learning-module-card .learning-module-actions,
+.learning-modules-list.backend-checking .learning-module-card .learning-module-users-section {
+  visibility: hidden;
 }
 
 .popup-body {
