@@ -100,6 +100,7 @@ const state = {
     errorMessage: ''
   },
   learningModuleBackendDiagnostics: null,
+  learningModulesLiveFailure: null,
   expandedLearningModules: new Set(),
   expandedLearningTopics: new Set(),
   expandedLearningModuleUsers: new Set(),
@@ -1072,7 +1073,7 @@ function renderDataControlsSection() {
 }
 
 function getLearningModulesStatus() {
-  return state.learningModulesStatus || {
+  const baseStatus = state.learningModulesStatus || {
     source: 'supabase',
     persistenceAvailable: true,
     setupRequired: false,
@@ -1082,6 +1083,73 @@ function getLearningModulesStatus() {
     fallbackDetail: '',
     errorMessage: ''
   };
+
+  const diagnostics = state.learningModuleBackendDiagnostics;
+  const liveFailure = state.learningModulesLiveFailure;
+  const diagnosticsReady = diagnostics && typeof diagnostics.persistenceAvailable === 'boolean';
+  const diagnosticsSayAvailable = diagnosticsReady ? diagnostics.persistenceAvailable : null;
+  const persistenceAvailable = liveFailure
+    ? false
+    : diagnosticsReady
+      ? diagnosticsSayAvailable
+      : baseStatus.persistenceAvailable;
+  const setupRequired = diagnosticsReady ? Boolean(diagnostics.setupRequired) : Boolean(baseStatus.setupRequired);
+
+  if (persistenceAvailable) {
+    return {
+      ...baseStatus,
+      source: 'supabase',
+      persistenceAvailable: true,
+      setupRequired: false,
+      statusBadge: baseStatus.source === 'fallback' ? 'Supabase synced' : (baseStatus.statusBadge || 'Supabase synced'),
+      statusTone: 'success',
+      statusMessage: 'Learning Modules are loading from Supabase and support saved connections.',
+      fallbackDetail: '',
+      errorMessage: ''
+    };
+  }
+
+  if (liveFailure) {
+    return {
+      ...baseStatus,
+      source: 'fallback',
+      persistenceAvailable: false,
+      setupRequired: Boolean(liveFailure.setupRequired || setupRequired),
+      statusBadge: liveFailure.setupRequired ? 'Setup required' : 'Sync unavailable',
+      statusTone: liveFailure.setupRequired ? 'error' : 'warning',
+      statusMessage: liveFailure.message || 'Supabase is currently unavailable.',
+      fallbackDetail: liveFailure.detail || baseStatus.fallbackDetail || '',
+      errorMessage: liveFailure.errorMessage || baseStatus.errorMessage || ''
+    };
+  }
+
+  return {
+    ...baseStatus,
+    persistenceAvailable: false,
+    setupRequired,
+    statusBadge: setupRequired ? 'Setup required' : (baseStatus.statusBadge || 'Fallback data')
+  };
+}
+
+function markLearningModulesLiveFailure({
+  message = 'Supabase is currently unavailable.',
+  detail = '',
+  errorMessage = '',
+  setupRequired = false,
+  operation = ''
+} = {}) {
+  state.learningModulesLiveFailure = {
+    message,
+    detail,
+    errorMessage,
+    setupRequired: Boolean(setupRequired),
+    operation,
+    occurredAt: new Date().toISOString()
+  };
+}
+
+function clearLearningModulesLiveFailure() {
+  state.learningModulesLiveFailure = null;
 }
 
 function renderLearningModulesStatus() {
@@ -1167,6 +1235,20 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
       ...diagnostics,
       reason
     };
+    if (diagnostics?.persistenceAvailable) {
+      clearLearningModulesLiveFailure();
+      if (state.user) {
+        try {
+          const syncResult = await syncPendingLearningModuleConnectionsForCurrentUser(state.learningModules);
+          const remaining = syncResult?.remaining || await fetchPendingLearningModuleConnectionsForCurrentUser();
+          state.pendingLocalModuleConnectionIds = new Set((remaining || []).map((connection) => connection.module_id));
+        } catch (_syncError) {
+          // Keep existing queued state when a live sync attempt fails; operation-specific errors are surfaced elsewhere.
+        }
+      } else {
+        state.pendingLocalModuleConnectionIds = new Set();
+      }
+    }
   } catch (error) {
     state.learningModuleBackendDiagnostics = {
       checkedAt: new Date().toISOString(),
@@ -1188,6 +1270,7 @@ async function refreshLearningModuleBackendDiagnostics({ reason = 'load-learning
   }
 
   logStructured('log', '[Connect.Me] Learning Modules backend diagnostics', state.learningModuleBackendDiagnostics);
+  renderLearningModulesSection();
   renderLearningModuleBackendDiagnostics();
   return state.learningModuleBackendDiagnostics;
 }
@@ -1199,6 +1282,13 @@ function isLearningModuleSetupError(message = '') {
 }
 
 function setLearningModulesFallbackStatus({ setupRequired = false, message = '', detail = '' } = {}) {
+  markLearningModulesLiveFailure({
+    setupRequired,
+    message: message || (setupRequired
+      ? 'Learning Modules persistence is unavailable because setup is incomplete.'
+      : 'Supabase is currently unavailable.'),
+    detail
+  });
   state.learningModulesStatus = {
     source: 'fallback',
     persistenceAvailable: false,
@@ -1216,6 +1306,7 @@ function setLearningModulesFallbackStatus({ setupRequired = false, message = '',
 }
 
 function setLearningModulesSyncedStatus({ badge = 'Sync active', message = 'Learning Modules are synced with Supabase and support saved connections.' } = {}) {
+  clearLearningModulesLiveFailure();
   state.learningModulesStatus = {
     ...getLearningModulesStatus(),
     source: 'supabase',
@@ -1804,7 +1895,7 @@ async function loadLearningModules({ force = false } = {}) {
       try {
         pendingConnections = await fetchPendingLearningModuleConnectionsForCurrentUser();
 
-        if (state.learningModulesStatus.persistenceAvailable) {
+        if (getLearningModulesStatus().persistenceAvailable) {
           let connectionsSetupError = false;
           try {
             const syncResult = await syncPendingLearningModuleConnectionsForCurrentUser(state.learningModules);
@@ -1816,6 +1907,11 @@ async function loadLearningModules({ force = false } = {}) {
                 setupRequired: true,
                 message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
                 detail: 'Run the bundled Learning Modules SQL to create the connection table and RPC helper, then queued connections will sync automatically.'
+              });
+              markLearningModulesLiveFailure({
+                setupRequired: true,
+                message: 'Supabase setup is incomplete for Learning Modules connections.',
+                detail: syncError?.message || 'Missing Learning Modules connection schema.'
               });
             }
           }
@@ -1830,12 +1926,24 @@ async function loadLearningModules({ force = false } = {}) {
                 message: 'Learning Modules connections are being saved locally until Supabase setup is completed.',
                 detail: 'The learning-module connection table or related Supabase function is missing. Run the bundled SQL to enable server-side persistence.'
               });
+              markLearningModulesLiveFailure({
+                setupRequired: true,
+                message: 'Supabase setup is incomplete for Learning Modules connections.',
+                detail: error?.message || 'Missing Learning Modules connection schema.'
+              });
             } else {
+              markLearningModulesLiveFailure({
+                setupRequired: false,
+                message: 'Unable to load your saved module connections from Supabase.',
+                detail: error?.message || 'Unknown connection read error.',
+                errorMessage: error?.message || ''
+              });
               remoteConnections = [];
             }
           }
 
           if (!connectionsSetupError) {
+            clearLearningModulesLiveFailure();
             setLearningModulesSyncedStatus({
               badge: state.learningModulesStatus.statusBadge || 'Supabase synced',
               message: state.learningModulesStatus.statusMessage || 'Learning Modules are loading from Supabase and support saved connections.'
@@ -1859,6 +1967,12 @@ async function loadLearningModules({ force = false } = {}) {
   } catch (error) {
     state.learningModulesError = 'Starter learning modules could not be loaded right now.';
     state.learningModules = [];
+    markLearningModulesLiveFailure({
+      setupRequired: isLearningModuleSetupError(error?.message),
+      message: 'Unable to load Learning Modules from Supabase.',
+      detail: error?.message || 'Unknown module load error.',
+      errorMessage: error?.message || ''
+    });
     setLearningModulesFallbackStatus({
       setupRequired: isLearningModuleSetupError(error?.message),
       detail: 'The workspace could not initialize Learning Modules. Reload after applying the Supabase migration if the issue persists.'
@@ -1894,8 +2008,16 @@ async function loadLearningModuleUsers(moduleSlug, { force = false } = {}) {
 
   try {
     const connectedUsers = await fetchLearningModuleConnectedUsers(moduleSlug);
+    clearLearningModulesLiveFailure();
     state.learningModuleUsersBySlug.set(moduleSlug, connectedUsers || []);
   } catch (error) {
+    markLearningModulesLiveFailure({
+      setupRequired: isLearningModuleSetupError(error?.message),
+      message: 'Unable to load connected users from Supabase.',
+      detail: error?.message || 'Unknown connected-users error.',
+      errorMessage: error?.message || '',
+      operation: 'connected-users-read'
+    });
     state.learningModuleUsersErrors.set(moduleSlug, error.message || 'Unable to load connected users right now.');
   } finally {
     state.learningModuleUsersLoading.delete(moduleSlug);
@@ -1956,6 +2078,15 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     });
     if (result?.queued) {
       state.pendingLocalModuleConnectionIds.add(moduleId);
+      markLearningModulesLiveFailure({
+        setupRequired: result?.status === 'setup_required',
+        message: result?.status === 'setup_required'
+          ? 'Supabase setup is incomplete for Learning Modules connections.'
+          : 'Supabase write failed, so this connection was queued locally.',
+        detail: result?.diagnostics?.insertError || 'Live save failed and the connection was queued locally.',
+        errorMessage: result?.diagnostics?.insertError || '',
+        operation: 'connect-write'
+      });
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-queued' });
       setStatus(
         result.status === 'setup_required'
@@ -1964,6 +2095,7 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
         'success'
       );
     } else {
+      clearLearningModulesLiveFailure();
       state.pendingLocalModuleConnectionIds.delete(moduleId);
       await refreshLearningModuleBackendDiagnostics({ reason: 'connect-supabase-success' });
       setLearningModulesSyncedStatus({
@@ -1979,6 +2111,13 @@ async function handleLearningModuleConnect(moduleId, moduleSlug) {
     }
   } catch (error) {
     state.moduleConnectionIds.delete(moduleId);
+    markLearningModulesLiveFailure({
+      setupRequired: isLearningModuleSetupError(error?.message),
+      message: 'Unable to save this module connection to Supabase.',
+      detail: error?.message || 'Unknown connection save error.',
+      errorMessage: error?.message || '',
+      operation: 'connect-write'
+    });
     logStructured('error', '[Connect.Me] Learning module connect failed', {
       moduleId,
       moduleSlug,
